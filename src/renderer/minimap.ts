@@ -197,6 +197,17 @@ export class HorizontalMinimap {
     this.onScrollChange?.();
   }
 
+  /** Scroll viewport by deltaPx pixels. */
+  scrollBy(deltaPx: number): void {
+    const maxScroll = this.virtualWidth - this.viewWidth;
+    if (maxScroll <= 0) return;
+    const prev = this.scrollX;
+    this.scrollX = Math.max(0, Math.min(maxScroll, this.scrollX + deltaPx));
+    if (this.scrollX !== prev) {
+      this.onScrollChange?.();
+    }
+  }
+
   getVirtualWidth(): number { return this.virtualWidth; }
   getScrollX(): number { return this.scrollX; }
 
@@ -279,17 +290,14 @@ export class HorizontalMinimap {
     this.canvas.addEventListener('mouseenter', () => { this.isHovered = true; });
     this.canvas.addEventListener('mouseleave', () => { this.isHovered = false; });
 
-    // Wheel → horizontal scroll / Ctrl+wheel → virtual width
+    // Wheel: Ctrl+wheel のみ仮想幅変更、通常スクロールは無効 (クリック/ドラッグで代替)
     this.canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      const delta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+      e.stopPropagation();
       if (e.ctrlKey) {
-        // Ctrl+scroll up = expand, Ctrl+scroll down = shrink
+        const delta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
         const colsDelta = delta < 0 ? 3 : -3;
         this.adjustVirtualWidth(colsDelta);
-      } else {
-        this.scrollX = Math.max(0, Math.min(this.virtualWidth - this.viewWidth, this.scrollX + delta * 3));
-        this.onScrollChange?.();
       }
     }, { passive: false });
   }

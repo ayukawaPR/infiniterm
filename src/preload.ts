@@ -43,6 +43,9 @@ export interface SSHProfile {
 }
 
 const electronAPI = {
+  // Platform info
+  platform: process.platform as string,
+
   // Shell discovery and preferences
   listShells: (): Promise<ShellListResult> =>
     ipcRenderer.invoke('shell-list'),

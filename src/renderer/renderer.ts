@@ -30,6 +30,7 @@ interface SSHProfile {
 declare global {
   interface Window {
     electronAPI: {
+      platform: string;
       listShells: () => Promise<{ shells: ShellEntry[]; defaultId: string }>;
       setDefaultShell: (id: string) => void;
       createPty: (opts: { shell?: string; cols: number; rows: number }) => Promise<{ id: number; shell: string }>;
@@ -90,6 +91,7 @@ let availableShells: ShellEntry[] = [];
 let defaultShellId = '';
 let sshProfiles: SSHProfile[] = [];
 let editingProfileId: string | null = null;
+let scrollRepeatCount = 0;
 
 const stack    = document.getElementById('terminal-stack')!;
 const tabbar   = document.getElementById('tabbar')!;
@@ -107,6 +109,12 @@ const widthOverlay   = document.getElementById('width-overlay')!;
 const minimapScrollThumb = document.getElementById('minimap-scroll-thumb')!;
 
 const minimap = new HorizontalMinimap(minimapCanvas, minimapHandle, widthOverlay, minimapScrollThumb);
+
+// ミニマップ領域全体で wheel を消費 (canvas 外のハンドル・トラック部分もカバー)
+document.getElementById('minimap-area')!.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+}, { passive: false });
 
 minimap.onScrollChange = () => {
   const session = sessions.get(activeTabId);
@@ -190,6 +198,9 @@ function shellIcon(s: ShellEntry): string {
   if (s.label.toLowerCase().includes('powershell 7') || s.id === 'pwsh7') return '💠';
   if (s.label.toLowerCase().includes('powershell') || s.id === 'pwsh5') return '🔵';
   if (s.id === 'cmd') return '⬛';
+  if (s.id === 'zsh') return '🐚';
+  if (s.id === 'bash') return '🖥';
+  if (s.id === 'fish') return '🐟';
   return '>';
 }
 
@@ -278,7 +289,7 @@ document.addEventListener('click', (e) => {
 
 function createTerminal(): { term: Terminal; fitAddon: FitAddon } {
   const term = new Terminal({
-    fontFamily: '"Cascadia Code", "Cascadia Mono", "MS Gothic", "BIZ UDGothic", "Noto Sans Mono CJK JP", Consolas, monospace',
+    fontFamily: '"Cascadia Code", "Cascadia Mono", "Menlo", "SF Mono", "MS Gothic", "BIZ UDGothic", "Noto Sans Mono CJK JP", Consolas, monospace',
     fontSize: 14,
     lineHeight: 1.2,
     letterSpacing: 0,
@@ -355,7 +366,15 @@ async function createTab(shellExe?: string): Promise<void> {
   attachClipboard(pane, term, session);
 
   activateTab(tabId);
-  fitAddon.fit();
+
+  // レイアウト確定を待ってからfitし、正しいcols/rowsでPTYを作成
+  // (2フレーム待つ: 1フレーム目でDOMリフロー、2フレーム目で確定)
+  await new Promise<void>(resolve => requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      fitAddon.fit();
+      resolve();
+    })
+  ));
 
   // Connect to PTY
   try {
@@ -391,6 +410,15 @@ async function createTab(shellExe?: string): Promise<void> {
     });
     term.onTitleChange((title: string) => {
       if (title) setTabTitle(session, title);
+    });
+
+    // PTY接続後にレイアウト確定を待って最終リサイズを送る
+    // (activateTab 内の RAF で fit() が走るタイミングより後に確実に実行)
+    requestAnimationFrame(() => {
+      fitAddon.fit();
+      if (session.ptyId !== null) {
+        window.electronAPI.resize(result.id, term.cols, term.rows);
+      }
     });
 
   } catch (err) {
@@ -486,6 +514,14 @@ const resizeObserver = new ResizeObserver(() => {
 });
 resizeObserver.observe(stack);
 
+// ---- Prevent macOS elastic overscroll ----
+// capturing フェーズで最速に preventDefault を呼び、compositor の overscroll を阻止。
+// xterm-viewport 内のスクロール (scrollback) だけは許可する。
+document.addEventListener('wheel', (e) => {
+  if ((e.target as HTMLElement).closest('.xterm-viewport')) return;
+  e.preventDefault();
+}, { passive: false, capture: true });
+
 // ---- Window controls ----
 
 document.getElementById('btn-minimize')!.addEventListener('click', () => window.electronAPI.minimize());
@@ -494,19 +530,20 @@ document.getElementById('btn-close')!.addEventListener('click',   () => window.e
 
 // ---- Keyboard shortcuts ----
 
+// capture: true で xterm.js より先にキーを処理し、PTY への送信を防ぐ
 document.addEventListener('keydown', (e) => {
   if (e.ctrlKey && e.key === 't') {
-    e.preventDefault();
+    e.preventDefault(); e.stopPropagation();
     openShellPicker();
     return;
   }
   if (e.ctrlKey && e.key === 'w') {
-    e.preventDefault();
+    e.preventDefault(); e.stopPropagation();
     if (activeTabId !== -1) closeTab(activeTabId);
     return;
   }
   if (e.ctrlKey && e.key === 'Tab') {
-    e.preventDefault();
+    e.preventDefault(); e.stopPropagation();
     const ids = [...sessions.keys()];
     if (ids.length < 2) return;
     const idx = ids.indexOf(activeTabId);
@@ -518,26 +555,49 @@ document.addEventListener('keydown', (e) => {
   }
   // 仮想幅 Ctrl+Shift+→/←/0
   if (e.ctrlKey && e.shiftKey && e.key === 'ArrowRight') {
-    e.preventDefault();
+    e.preventDefault(); e.stopPropagation();
     minimap.adjustVirtualWidth(40);
     return;
   }
   if (e.ctrlKey && e.shiftKey && e.key === 'ArrowLeft') {
-    e.preventDefault();
+    e.preventDefault(); e.stopPropagation();
     minimap.adjustVirtualWidth(-40);
     return;
   }
   if (e.ctrlKey && e.shiftKey && e.key === '0') {
-    e.preventDefault();
+    e.preventDefault(); e.stopPropagation();
     minimap.resetVirtualWidth();
+    return;
+  }
+  // ビューポートスクロール Ctrl+Shift+. / , (押し続けで加速)
+  if (e.ctrlKey && e.shiftKey && (e.key === '>' || e.key === '.')) {
+    e.preventDefault(); e.stopPropagation();
+    if (e.repeat) {
+      scrollRepeatCount++;
+    } else {
+      scrollRepeatCount = 0;
+    }
+    const speed = Math.min(40 + scrollRepeatCount * 12, 400);
+    minimap.scrollBy(speed);
+    return;
+  }
+  if (e.ctrlKey && e.shiftKey && (e.key === '<' || e.key === ',')) {
+    e.preventDefault(); e.stopPropagation();
+    if (e.repeat) {
+      scrollRepeatCount++;
+    } else {
+      scrollRepeatCount = 0;
+    }
+    const speed = Math.min(40 + scrollRepeatCount * 12, 400);
+    minimap.scrollBy(-speed);
     return;
   }
   if (e.ctrlKey && e.key >= '1' && e.key <= '9') {
     const ids = [...sessions.keys()];
     const idx = parseInt(e.key) - 1;
-    if (idx < ids.length) { e.preventDefault(); activateTab(ids[idx]); }
+    if (idx < ids.length) { e.preventDefault(); e.stopPropagation(); activateTab(ids[idx]); }
   }
-});
+}, true);
 
 // ---- SSH Dialog ----
 
@@ -748,8 +808,13 @@ async function connectSsh(profile: SSHProfile): Promise<void> {
     term.onResize(({ cols, rows }) => {
       if (session.ptyId !== null) window.electronAPI.sshResize(result.id, cols, rows);
     });
-    // 接続確立後に改めてリサイズを通知（RAF中に取得できなかった場合の保険）
-    window.electronAPI.sshResize(result.id, term.cols, term.rows);
+    // 接続確立後にレイアウト確定を待って最終リサイズを送る
+    requestAnimationFrame(() => {
+      fitAddon.fit();
+      if (session.ptyId !== null) {
+        window.electronAPI.sshResize(result.id, term.cols, term.rows);
+      }
+    });
 
   } catch (err) {
     term.write(`\r\n\x1b[31m[SSH 接続失敗: ${err}]\x1b[0m\r\n`);
@@ -839,6 +904,9 @@ sshDialog.addEventListener('click', (e) => {
 // ---- Boot ----
 
 async function init(): Promise<void> {
+  // プラットフォームに応じたbodyクラスを設定
+  document.body.classList.add(`platform-${window.electronAPI.platform}`);
+
   const { shells, defaultId } = await window.electronAPI.listShells();
   availableShells = shells;
   defaultShellId = defaultId;

@@ -11,6 +11,7 @@
       box-sizing: border-box;
       margin: 0;
       padding: 0;
+      overscroll-behavior: none;
     }
 
     :root {
@@ -31,9 +32,10 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
+      overscroll-behavior: none;
       background: var(--bg-base);
       color: var(--fg-base);
-      font-family: 'Cascadia Code', 'MS Gothic', 'BIZ UDGothic', Consolas, monospace;
+      font-family: 'Cascadia Code', 'Menlo', 'SF Mono', 'MS Gothic', 'BIZ UDGothic', Consolas, monospace;
     }
 
     /* ---- Titlebar ---- */
@@ -47,6 +49,14 @@
       -webkit-app-region: drag;
       user-select: none;
       flex-shrink: 0;
+    }
+
+    /* macOS: トラフィックライト分のパディング、カスタムボタン非表示 */
+    body.platform-darwin #titlebar {
+      padding-left: 78px;
+    }
+    body.platform-darwin #titlebar .controls {
+      display: none;
     }
 
     #titlebar .icon {
@@ -718,7 +728,7 @@
       opacity: 0;
       transition: opacity 0.15s;
       z-index: 500;
-      font-family: 'Cascadia Code', 'MS Gothic', Consolas, monospace;
+      font-family: 'Cascadia Code', 'Menlo', 'SF Mono', 'MS Gothic', Consolas, monospace;
     }
 
     #width-overlay.visible {

@@ -6,6 +6,10 @@ import * as os from 'os';
 import * as pty from '@homebridge/node-pty-prebuilt-multiarch';
 import { StringDecoder } from 'string_decoder';
 
+// macOS: Chromium compositor の elastic overscroll を無効化 (app.ready より前に設定)
+app.commandLine.appendSwitch('disable-features', 'ElasticOverscroll');
+app.commandLine.appendSwitch('overscroll-history-navigation', '0');
+
 export interface SSHProfile {
   id: string;
   label: string;
@@ -25,17 +29,19 @@ const ptyProcesses = new Map<number, pty.IPty>();
 const sshSessions = new Map<number, { conn: SSHClient; stream: NodeJS.ReadWriteStream }>();
 let nextPtyId = 1;
 
-// ---- MSYS2 detection ----
+// ---- Platform detection ----
+
+const isWin = process.platform === 'win32';
+const isMac = process.platform === 'darwin';
+
+// ---- MSYS2 detection (Windows only) ----
 
 function getMsys2SearchRoots(): string[] {
   const roots: string[] = [];
-  // Allow user to specify MSYS2 location via environment variable
   const envRoot = process.env.MSYS2_ROOT ?? process.env.MSYS_ROOT;
   if (envRoot) roots.push(envRoot.replace(/[/\\]$/, ''));
-  // Use SYSTEMDRIVE (typically C:) as primary search location
   const sysDrive = (process.env.SYSTEMDRIVE ?? 'C:').replace(/[/\\]$/, '');
   roots.push(path.join(sysDrive, 'msys64'), path.join(sysDrive, 'msys32'));
-  // Also check other common drives if SYSTEMDRIVE is not already them
   for (const letter of ['C', 'D', 'E']) {
     if (!sysDrive.toUpperCase().startsWith(letter)) {
       roots.push(`${letter}:\\msys64`, `${letter}:\\msys32`);
@@ -51,6 +57,7 @@ interface Msys2Info {
 }
 
 function findMsys2(): Msys2Info | null {
+  if (!isWin) return null;
   for (const root of getMsys2SearchRoots()) {
     const zsh = path.join(root, 'usr', 'bin', 'zsh.exe');
     const bash = path.join(root, 'usr', 'bin', 'bash.exe');
@@ -113,13 +120,17 @@ export interface ShellEntry {
 }
 
 function detectShells(): ShellEntry[] {
+  if (isWin) return detectShellsWindows();
+  return detectShellsUnix();
+}
+
+function detectShellsWindows(): ShellEntry[] {
   const shells: ShellEntry[] = [];
 
   // 1. MSYS2 zsh
   const msys2 = findMsys2();
   if (msys2) {
     shells.push({ id: 'msys2-zsh', label: 'zsh (MSYS2)', exe: msys2.zsh, isMsys2: true });
-    // Also expose bash if different from zsh
     if (fs.existsSync(msys2.bash)) {
       shells.push({ id: 'msys2-bash', label: 'bash (MSYS2)', exe: msys2.bash, isMsys2: true });
     }
@@ -148,6 +159,30 @@ function detectShells(): ShellEntry[] {
   const cmd = process.env.COMSPEC ?? path.join(systemRoot, 'System32', 'cmd.exe');
   if (fs.existsSync(cmd)) {
     shells.push({ id: 'cmd', label: 'Command Prompt', exe: cmd, isMsys2: false });
+  }
+
+  return shells;
+}
+
+function detectShellsUnix(): ShellEntry[] {
+  const shells: ShellEntry[] = [];
+  const seen = new Set<string>();
+
+  const candidates: { id: string; label: string; paths: string[] }[] = [
+    { id: 'zsh',  label: 'zsh',  paths: ['/bin/zsh', '/usr/bin/zsh', '/usr/local/bin/zsh', '/opt/homebrew/bin/zsh'] },
+    { id: 'bash', label: 'bash', paths: ['/bin/bash', '/usr/bin/bash', '/usr/local/bin/bash', '/opt/homebrew/bin/bash'] },
+    { id: 'fish', label: 'fish', paths: ['/usr/bin/fish', '/usr/local/bin/fish', '/opt/homebrew/bin/fish'] },
+    { id: 'sh',   label: 'sh',   paths: ['/bin/sh'] },
+  ];
+
+  for (const c of candidates) {
+    for (const p of c.paths) {
+      if (!seen.has(c.id) && fs.existsSync(p)) {
+        shells.push({ id: c.id, label: c.label, exe: p, isMsys2: false });
+        seen.add(c.id);
+        break;
+      }
+    }
   }
 
   return shells;
@@ -201,7 +236,9 @@ function createWindow(): void {
       nodeIntegration: false,
       sandbox: false,
     },
-    frame: false,
+    frame: isWin ? false : true,
+    titleBarStyle: isMac ? 'hiddenInset' : 'default',
+    trafficLightPosition: isMac ? { x: 10, y: 6 } : undefined,
     show: false,
     title: 'infiniterm',
   });
@@ -261,24 +298,33 @@ app.whenReady().then(() => {
       const shells = detectShells();
       const prefs = loadPrefs();
       const found = shells.find(s => s.id === prefs.defaultShellId) ?? shells[0];
-      exe = found?.exe ?? (process.env.COMSPEC ?? 'cmd.exe');
+      if (isWin) {
+        exe = found?.exe ?? (process.env.COMSPEC ?? 'cmd.exe');
+      } else {
+        exe = found?.exe ?? (process.env.SHELL ?? '/bin/zsh');
+      }
     }
 
     const env = resolveShellEnv(exe);
 
-    // MSYS2 シェルは cmd.exe 経由で起動し、先に chcp 65001 (UTF-8) を設定する。
-    // winpty が作る Windows コンソールのデフォルトコードページ (CP1252/CP932 等) のままだと
-    // tmux のボックス描画文字など UTF-8 多バイト列が文字化けするため。
-    const msys2 = findMsys2();
-    const isMsys2Shell = !!(msys2 && exe.toLowerCase().startsWith(msys2.root.toLowerCase()));
-
     let spawnExe: string;
     let spawnArgs: string[];
-    if (isMsys2Shell) {
-      const comspec = process.env.COMSPEC ?? 'cmd.exe';
-      spawnExe = comspec;
-      spawnArgs = ['/c', `chcp 65001>nul 2>&1 & ${exe}`];
+
+    if (isWin) {
+      // MSYS2 シェルは cmd.exe 経由で起動し、先に chcp 65001 (UTF-8) を設定する。
+      const msys2 = findMsys2();
+      const isMsys2Shell = !!(msys2 && exe.toLowerCase().startsWith(msys2.root.toLowerCase()));
+
+      if (isMsys2Shell) {
+        const comspec = process.env.COMSPEC ?? 'cmd.exe';
+        spawnExe = comspec;
+        spawnArgs = ['/c', `chcp 65001>nul 2>&1 & ${exe}`];
+      } else {
+        spawnExe = exe;
+        spawnArgs = [];
+      }
     } else {
+      // macOS / Linux
       spawnExe = exe;
       spawnArgs = [];
     }
@@ -289,7 +335,7 @@ app.whenReady().then(() => {
       rows,
       cwd: os.homedir(),
       env,
-      useConpty: false,
+      ...(isWin ? { useConpty: false } : {}),
     });
 
     ptyProc.onData((data: string) => {
@@ -485,5 +531,11 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  app.quit();
+  // macOS では全ウィンドウを閉じてもアプリを終了しない (標準的な挙動)
+  if (!isMac) app.quit();
+});
+
+// macOS: Dock アイコンクリック時にウィンドウがなければ再作成
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
