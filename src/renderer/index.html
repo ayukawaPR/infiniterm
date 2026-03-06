@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:;">
+  <title>infiniterm</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg-base:    #1e1e2e;
+      --bg-mantle:  #181825;
+      --bg-surface: #313244;
+      --bg-surface1:#45475a;
+      --fg-base:    #cdd6f4;
+      --fg-sub:     #a6adc8;
+      --accent:     #89b4fa;
+      --red:        #f38ba8;
+      --green:      #a6e3a1;
+      --yellow:     #f9e2af;
+      --titlebar-height: 26px;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg-base);
+      color: var(--fg-base);
+      font-family: 'Cascadia Code', 'MS Gothic', 'BIZ UDGothic', Consolas, monospace;
+    }
+
+    /* ---- Titlebar ---- */
+    #titlebar {
+      height: var(--titlebar-height);
+      background: var(--bg-mantle);
+      display: flex;
+      align-items: center;
+      padding: 0 5px 0 10px;
+      gap: 6px;
+      -webkit-app-region: drag;
+      user-select: none;
+      flex-shrink: 0;
+    }
+
+    #titlebar .icon {
+      font-size: 10px;
+      color: var(--accent);
+      opacity: 0.9;
+      letter-spacing: -1px;
+    }
+    #titlebar .title {
+      font-size: 11px;
+      color: var(--fg-sub);
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      letter-spacing: 0.01em;
+    }
+
+    #titlebar .controls {
+      display: flex; gap: 2px; -webkit-app-region: no-drag;
+    }
+    #titlebar .controls button {
+      width: 22px; height: 22px; border: none; border-radius: 3px;
+      background: transparent; color: rgba(255,255,255,0.3); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; transition: background 0.1s, color 0.1s;
+    }
+    #titlebar .controls button:hover { background: var(--bg-surface1); color: var(--fg-base); }
+    #titlebar .controls #btn-close:hover { background: var(--red); color: var(--bg-mantle); }
+
+    /* ---- Tab bar ---- */
+    #tabbar {
+      height: 28px;
+      background: var(--bg-mantle);
+      display: flex;
+      align-items: center;
+      padding: 0 6px;
+      gap: 2px;
+      flex-shrink: 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+      position: relative;
+      border-top: 1px solid rgba(255,255,255,0.05);
+      border-bottom: 1px solid rgba(0,0,0,0.3);
+    }
+    #tabbar::-webkit-scrollbar { display: none; }
+
+    .tab {
+      height: 22px; min-width: 80px; max-width: 180px;
+      padding: 0 9px; border-radius: 4px;
+      display: flex; align-items: center; gap: 5px;
+      font-size: 11px; color: var(--fg-sub);
+      cursor: pointer; background: transparent; border: none;
+      transition: background 0.1s, color 0.1s;
+      white-space: nowrap; overflow: hidden; flex-shrink: 0;
+      position: relative;
+    }
+    .tab:hover { background: rgba(255,255,255,0.06); color: var(--fg-base); }
+    .tab.active {
+      background: rgba(255,255,255,0.1);
+      color: var(--fg-base);
+    }
+    .tab.active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 6px; right: 6px;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 1px 1px 0 0;
+    }
+    .tab .tab-title { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+    .tab .tab-close {
+      width: 14px; height: 14px; border-radius: 2px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; opacity: 0; flex-shrink: 0; color: var(--fg-sub);
+    }
+    .tab:hover .tab-close, .tab.active .tab-close { opacity: 0.6; }
+    .tab .tab-close:hover { background: var(--red); color: var(--bg-base); opacity: 1 !important; }
+
+    /* ---- New Tab button + shell picker ---- */
+    #new-tab-wrap {
+      position: relative;
+      align-self: center;
+      flex-shrink: 0;
+    }
+
+    #btn-new-tab {
+      height: 26px; min-width: 40px;
+      border: none; background: transparent; color: rgba(255,255,255,0.3);
+      font-size: 15px; cursor: pointer; border-radius: 3px;
+      display: flex; align-items: center; justify-content: center; gap: 1px;
+      transition: background 0.1s, color 0.1s;
+      padding: 0 10px;
+    }
+    #btn-new-tab:hover { background: rgba(255,255,255,0.06); color: var(--fg-base); }
+
+    #btn-new-tab span { pointer-events: none; }
+    #btn-new-tab .chevron {
+      font-size: 8px;
+      opacity: 0.5;
+    }
+
+    /* ---- Shell picker dropdown ---- */
+    #shell-picker {
+      position: fixed;
+      background: var(--bg-mantle);
+      border: 1px solid var(--bg-surface);
+      border-radius: 6px;
+      min-width: 220px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      z-index: 1000;
+      overflow: hidden;
+      display: none;
+    }
+
+    #shell-picker.open { display: block; }
+
+    .shell-picker-header {
+      padding: 8px 12px 6px;
+      font-size: 11px;
+      color: var(--fg-sub);
+      border-bottom: 1px solid var(--bg-surface);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .shell-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--fg-base);
+      transition: background 0.1s;
+      border: none;
+      background: transparent;
+      width: 100%;
+      text-align: left;
+    }
+
+    .shell-option:hover { background: var(--bg-surface); }
+
+    .shell-option .shell-icon {
+      font-size: 14px;
+      width: 20px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .shell-option .shell-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .shell-option .shell-name {
+      font-weight: 500;
+    }
+
+    .shell-option .shell-path {
+      font-size: 10px;
+      color: var(--fg-sub);
+      margin-top: 1px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .shell-option .default-badge {
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: var(--accent);
+      color: var(--bg-base);
+      flex-shrink: 0;
+    }
+
+    .shell-picker-footer {
+      padding: 6px 12px;
+      border-top: 1px solid var(--bg-surface);
+      font-size: 11px;
+      color: var(--fg-sub);
+    }
+
+    /* ---- Terminal area ---- */
+    #terminal-stack {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .terminal-pane {
+      position: absolute;
+      inset: 0;
+      padding: 4px;
+      display: none;
+    }
+
+    .terminal-pane.active { display: block; }
+
+    .terminal-pane .xterm { height: 100%; }
+    .terminal-pane .xterm-viewport { overflow-y: hidden !important; }
+
+    /* Layout wrapper */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* ---- SSH Dialog ---- */
+    #ssh-dialog {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(2px);
+    }
+
+    #ssh-dialog.open {
+      display: flex;
+    }
+
+    .ssh-dialog-box {
+      background: var(--bg-mantle);
+      border: 1px solid var(--bg-surface);
+      border-radius: 10px;
+      width: 480px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+      overflow: hidden;
+    }
+
+    .ssh-dialog-header {
+      display: flex;
+      align-items: center;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid var(--bg-surface);
+      gap: 8px;
+    }
+
+    .ssh-dialog-header h2 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--fg-base);
+      flex: 1;
+    }
+
+    .ssh-dialog-header .ssh-header-icon {
+      font-size: 16px;
+    }
+
+    #ssh-dialog-close {
+      width: 24px;
+      height: 24px;
+      border: none;
+      background: transparent;
+      color: var(--fg-sub);
+      cursor: pointer;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      transition: background 0.12s, color 0.12s;
+    }
+
+    #ssh-dialog-close:hover {
+      background: var(--red);
+      color: var(--bg-base);
+    }
+
+    .ssh-dialog-body {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    /* ---- SSH History view ---- */
+    #ssh-view-history {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .ssh-history-actions {
+      padding: 12px 16px;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    #ssh-new-btn {
+      padding: 6px 14px;
+      background: var(--accent);
+      color: var(--bg-base);
+      border: none;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.12s;
+    }
+
+    #ssh-new-btn:hover { opacity: 0.85; }
+
+    .ssh-history-section-label {
+      padding: 4px 16px 6px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--fg-sub);
+    }
+
+    #ssh-history-list {
+      list-style: none;
+      padding: 0 8px 12px;
+    }
+
+    .ssh-history-empty {
+      padding: 32px 16px;
+      text-align: center;
+      color: var(--fg-sub);
+      font-size: 13px;
+    }
+
+    .ssh-history-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+
+    .ssh-history-item:hover {
+      background: var(--bg-surface);
+    }
+
+    .ssh-history-item .ssh-hist-icon {
+      font-size: 15px;
+      flex-shrink: 0;
+      width: 22px;
+      text-align: center;
+    }
+
+    .ssh-history-item .ssh-hist-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .ssh-history-item .ssh-hist-label {
+      font-size: 13px;
+      color: var(--fg-base);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .ssh-history-item .ssh-hist-meta {
+      font-size: 11px;
+      color: var(--fg-sub);
+      margin-top: 1px;
+    }
+
+    .ssh-hist-pin-btn,
+    .ssh-hist-edit-btn,
+    .ssh-hist-del-btn {
+      width: 24px;
+      height: 24px;
+      border: none;
+      background: transparent;
+      color: var(--fg-sub);
+      cursor: pointer;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      opacity: 0;
+      transition: background 0.1s, color 0.1s, opacity 0.1s;
+      flex-shrink: 0;
+    }
+
+    .ssh-history-item:hover .ssh-hist-pin-btn,
+    .ssh-history-item:hover .ssh-hist-edit-btn,
+    .ssh-history-item:hover .ssh-hist-del-btn {
+      opacity: 1;
+    }
+
+    .ssh-hist-pin-btn.pinned {
+      color: var(--yellow);
+      opacity: 1;
+    }
+
+    .ssh-hist-pin-btn:hover { background: var(--bg-surface1); color: var(--yellow); }
+    .ssh-hist-edit-btn:hover { background: var(--bg-surface1); color: var(--accent); }
+    .ssh-hist-del-btn:hover { background: var(--red); color: var(--bg-base); }
+
+    /* ---- SSH Form view ---- */
+    #ssh-view-form {
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+      gap: 14px;
+    }
+
+    .ssh-form-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: -4px;
+    }
+
+    #ssh-back-btn {
+      border: none;
+      background: transparent;
+      color: var(--fg-sub);
+      cursor: pointer;
+      border-radius: 4px;
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      transition: background 0.12s;
+    }
+
+    #ssh-back-btn:hover { background: var(--bg-surface); color: var(--fg-base); }
+
+    #ssh-form-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--fg-base);
+    }
+
+    .ssh-form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .ssh-form-row label {
+      font-size: 11px;
+      color: var(--fg-sub);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .ssh-form-row input[type="text"],
+    .ssh-form-row input[type="number"],
+    .ssh-form-row input[type="password"] {
+      background: var(--bg-surface);
+      border: 1px solid var(--bg-surface1);
+      border-radius: 5px;
+      color: var(--fg-base);
+      padding: 7px 10px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.12s;
+      width: 100%;
+    }
+
+    .ssh-form-row input:focus {
+      border-color: var(--accent);
+    }
+
+    .ssh-host-port-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    .ssh-host-port-row .ssh-form-row:first-child {
+      flex: 1;
+    }
+
+    .ssh-host-port-row .ssh-form-row:last-child {
+      width: 80px;
+    }
+
+    .ssh-auth-radios {
+      display: flex;
+      gap: 16px;
+    }
+
+    .ssh-auth-radios label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 13px;
+      color: var(--fg-base);
+      text-transform: none;
+      letter-spacing: normal;
+      cursor: pointer;
+    }
+
+    .ssh-auth-radios input[type="radio"] {
+      accent-color: var(--accent);
+    }
+
+    .ssh-keypath-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    .ssh-keypath-row input {
+      flex: 1;
+    }
+
+    #ssh-keypath-browse {
+      padding: 7px 12px;
+      background: var(--bg-surface);
+      border: 1px solid var(--bg-surface1);
+      border-radius: 5px;
+      color: var(--fg-base);
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.12s;
+      font-family: inherit;
+    }
+
+    #ssh-keypath-browse:hover { background: var(--bg-surface1); }
+
+    #ssh-status {
+      font-size: 12px;
+      color: var(--red);
+      min-height: 16px;
+    }
+
+    #ssh-status.success { color: var(--green); }
+
+    .ssh-form-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding-top: 2px;
+    }
+
+    #ssh-connect-btn {
+      padding: 8px 20px;
+      background: var(--accent);
+      color: var(--bg-base);
+      border: none;
+      border-radius: 5px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.12s;
+      font-family: inherit;
+    }
+
+    #ssh-connect-btn:hover { opacity: 0.85; }
+    #ssh-connect-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    #ssh-cancel-btn {
+      padding: 8px 16px;
+      background: transparent;
+      color: var(--fg-sub);
+      border: 1px solid var(--bg-surface1);
+      border-radius: 5px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.12s;
+      font-family: inherit;
+    }
+
+    #ssh-cancel-btn:hover { background: var(--bg-surface); color: var(--fg-base); }
+
+    /* shell-picker に SSH エントリ追加用 */
+    .shell-picker-divider {
+      height: 1px;
+      background: var(--bg-surface);
+      margin: 0;
+    }
+
+    /* ---- Minimap area ---- */
+    #minimap-area {
+      height: 22px;
+      background: var(--bg-mantle);
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    #minimap-main {
+      flex: 1;
+      display: flex;
+      flex-direction: row;
+      min-height: 0;
+      min-width: 0;
+    }
+
+    #minimap-canvas {
+      flex: 1;
+      height: 100%;
+      display: block;
+      cursor: pointer;
+      min-width: 0;
+    }
+
+    #minimap-scroll-track {
+      height: 4px;
+      flex-shrink: 0;
+      position: relative;
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    #minimap-scroll-thumb {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      background: rgba(137, 180, 250, 0.80);
+      border-radius: 2px;
+      min-width: 4px;
+      display: none;
+    }
+
+    #minimap-handle {
+      width: 24px;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: col-resize;
+      color: rgba(255, 255, 255, 0.3);
+      font-size: 11px;
+      letter-spacing: -2px;
+      user-select: none;
+      border-left: 1px solid rgba(255, 255, 255, 0.06);
+      transition: color 0.12s, background 0.12s;
+      flex-shrink: 0;
+    }
+
+    #minimap-handle:hover {
+      color: rgba(255, 255, 255, 0.8);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    #minimap-handle.dragging {
+      color: var(--accent);
+      background: rgba(137, 180, 250, 0.08);
+    }
+
+    /* ---- Width overlay ---- */
+    #width-overlay {
+      position: fixed;
+      top: 44px;
+      right: 14px;
+      background: rgba(10, 14, 26, 0.92);
+      color: #89b4fa;
+      border: 1px solid rgba(137, 180, 250, 0.35);
+      border-radius: 5px;
+      padding: 4px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+      z-index: 500;
+      font-family: 'Cascadia Code', 'MS Gothic', Consolas, monospace;
+    }
+
+    #width-overlay.visible {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="titlebar">
+      <span class="icon">❯❯</span>
+      <span class="title" id="title-text">infiniterm</span>
+      <div class="controls">
+        <button id="btn-minimize" title="最小化">&#8211;</button>
+        <button id="btn-maximize" title="最大化">&#9633;</button>
+        <button id="btn-close" title="閉じる">&#10005;</button>
+      </div>
+    </div>
+
+    <div id="tabbar">
+      <div id="new-tab-wrap">
+        <button id="btn-new-tab" title="新しいタブ (Ctrl+T) / クリックでシェル選択">
+          <span>+</span>
+          <span class="chevron">&#9660;</span>
+        </button>
+      </div>
+    </div>
+
+    <div id="terminal-stack"></div>
+    <div id="minimap-area">
+      <div id="minimap-main">
+        <canvas id="minimap-canvas"></canvas>
+        <div id="minimap-handle" title="ドラッグで仮想幅を変更 / ダブルクリックでリセット">&#10093;&#10093;</div>
+      </div>
+      <div id="minimap-scroll-track">
+        <div id="minimap-scroll-thumb"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shell picker (portaled to body) -->
+  <div id="shell-picker">
+    <div class="shell-picker-header">シェルを選択</div>
+    <div id="shell-picker-list"></div>
+    <div class="shell-picker-footer">右クリック: デフォルトに設定</div>
+  </div>
+
+  <!-- Width overlay -->
+  <div id="width-overlay"></div>
+
+  <!-- SSH Dialog -->
+  <div id="ssh-dialog">
+    <div class="ssh-dialog-box">
+      <div class="ssh-dialog-header">
+        <span class="ssh-header-icon">&#128272;</span>
+        <h2>SSH 接続</h2>
+        <button id="ssh-dialog-close" title="閉じる">&#10005;</button>
+      </div>
+      <div class="ssh-dialog-body">
+
+        <!-- 履歴ビュー -->
+        <div id="ssh-view-history">
+          <div class="ssh-history-actions">
+            <button id="ssh-new-btn">+ 新しい接続</button>
+          </div>
+          <ul id="ssh-history-list">
+            <li class="ssh-history-empty">接続履歴がありません</li>
+          </ul>
+        </div>
+
+        <!-- フォームビュー -->
+        <div id="ssh-view-form" style="display:none;">
+          <div class="ssh-form-header">
+            <button id="ssh-back-btn" title="戻る">&#8592;</button>
+            <h3 id="ssh-form-title">新しい接続</h3>
+          </div>
+
+          <div class="ssh-host-port-row">
+            <div class="ssh-form-row">
+              <label for="ssh-host">ホスト</label>
+              <input type="text" id="ssh-host" placeholder="example.com" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="ssh-form-row">
+              <label for="ssh-port">ポート</label>
+              <input type="number" id="ssh-port" value="22" min="1" max="65535">
+            </div>
+          </div>
+
+          <div class="ssh-form-row">
+            <label for="ssh-username">ユーザー名</label>
+            <input type="text" id="ssh-username" placeholder="user" autocomplete="off" spellcheck="false">
+          </div>
+
+          <div class="ssh-form-row">
+            <label>認証方式</label>
+            <div class="ssh-auth-radios">
+              <label><input type="radio" name="ssh-auth" id="ssh-auth-password" value="password" checked> パスワード</label>
+              <label><input type="radio" name="ssh-auth" id="ssh-auth-key" value="key"> 秘密鍵</label>
+              <label><input type="radio" name="ssh-auth" id="ssh-auth-both" value="both"> 両方</label>
+            </div>
+          </div>
+
+          <div class="ssh-form-row" id="ssh-password-group">
+            <label for="ssh-password" id="ssh-password-label">パスワード</label>
+            <input type="password" id="ssh-password" placeholder="password" autocomplete="current-password">
+          </div>
+
+          <div class="ssh-form-row" id="ssh-key-group" style="display:none;">
+            <label for="ssh-keypath">秘密鍵ファイル</label>
+            <div class="ssh-keypath-row">
+              <input type="text" id="ssh-keypath" placeholder="~/.ssh/id_rsa" spellcheck="false">
+              <button id="ssh-keypath-browse">参照...</button>
+            </div>
+          </div>
+
+          <div id="ssh-status"></div>
+
+          <div class="ssh-form-actions">
+            <button id="ssh-cancel-btn">キャンセル</button>
+            <button id="ssh-connect-btn">接続</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</body>
+</html>
