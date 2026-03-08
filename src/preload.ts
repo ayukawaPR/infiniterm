@@ -186,6 +186,25 @@ const electronAPI = {
     ipcRenderer.on('share-remote-disconnected', handler);
     return () => ipcRenderer.removeListener('share-remote-disconnected', handler);
   },
+
+  // Web Terminal (ttyd)
+  webTerminalStart: (opts?: { port?: number }): Promise<{ port: number; username: string; password: string; localUrl: string; tailscaleUrl: string | null; qrDataUrl: string }> =>
+    ipcRenderer.invoke('web-terminal-start', opts ?? {}),
+
+  webTerminalStop: (): void =>
+    ipcRenderer.send('web-terminal-stop'),
+
+  onWebTerminalStopped: (callback: () => void): (() => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('web-terminal-stopped', handler);
+    return () => ipcRenderer.removeListener('web-terminal-stopped', handler);
+  },
+
+  onWebTerminalError: (callback: (msg: string) => void): (() => void) => {
+    const handler = (_: Electron.IpcRendererEvent, msg: string) => callback(msg);
+    ipcRenderer.on('web-terminal-error', handler);
+    return () => ipcRenderer.removeListener('web-terminal-error', handler);
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

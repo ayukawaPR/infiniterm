@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:;">
+    content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:;">
   <title>infiniterm</title>
   <style>
     *, *::before, *::after {
@@ -942,7 +942,12 @@
       color: rgba(255,255,255,0.3); cursor: pointer; font-size: 13px;
       padding: 0 6px; border-radius: 3px; transition: color 0.1s;
     }
-    #btn-share:hover, #btn-connect:hover { color: var(--fg-base) !important; }
+    #btn-share:hover, #btn-connect:hover, #btn-web-terminal:hover { color: var(--fg-base) !important; }
+    #btn-web-terminal {
+      -webkit-app-region: no-drag; background: transparent; border: none;
+      color: rgba(255,255,255,0.3); cursor: pointer; font-size: 13px;
+      padding: 0 6px; border-radius: 3px; transition: color 0.1s;
+    }
     .tab.remote-tab { border-left: 2px solid var(--accent); }
     .tab.remote-tab .tab-title { font-style: italic; }
 
@@ -1060,6 +1065,63 @@
     #connect-cancel-btn {
       background: var(--bg-surface); color: var(--fg-base);
     }
+
+    /* ---- Web Terminal dialog ---- */
+    #web-terminal-dialog {
+      display: none; position: fixed; inset: 0; z-index: 300;
+      background: rgba(0,0,0,0.5); align-items: center; justify-content: center;
+    }
+    #web-terminal-dialog.open { display: flex; }
+    .web-terminal-dialog-box {
+      background: var(--bg-base); border: 1px solid var(--bg-surface1);
+      border-radius: 10px; width: 420px; max-height: 80vh;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5); overflow: hidden;
+    }
+    .web-terminal-dialog-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px; border-bottom: 1px solid var(--bg-surface);
+    }
+    .web-terminal-dialog-header h2 { margin: 0; font-size: 14px; color: var(--fg-base); }
+    #web-terminal-dialog-close {
+      background: none; border: none; color: var(--fg-sub); cursor: pointer;
+      font-size: 16px; width: 24px; height: 24px; border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #web-terminal-dialog-close:hover { background: var(--red); color: var(--bg-base); }
+    .web-terminal-dialog-body { padding: 20px; }
+    .web-terminal-dialog-body img { display: block; margin: 0 auto 16px; border-radius: 8px; }
+    .web-terminal-cred {
+      background: var(--bg-surface); border-radius: 8px; padding: 12px;
+      margin: 12px 0; font-size: 13px; color: var(--fg-base);
+    }
+    .web-terminal-cred .label { color: var(--fg-sub); font-size: 11px; display: block; margin-bottom: 2px; }
+    .web-terminal-cred .value { font-family: monospace; user-select: all; word-break: break-all; }
+    .web-terminal-cred + .web-terminal-cred { margin-top: 8px; }
+    .web-terminal-url {
+      font-size: 14px; font-weight: 600; color: var(--accent);
+      text-align: center; margin: 12px 0; user-select: all; word-break: break-all;
+    }
+    .web-terminal-url.tailscale { color: var(--green); }
+    #web-terminal-error {
+      font-size: 12px; color: var(--red); text-align: center; margin-top: 8px;
+    }
+    .web-terminal-dialog-footer {
+      padding: 12px 16px; border-top: 1px solid var(--bg-surface);
+      display: flex; justify-content: center; gap: 8px;
+    }
+    .web-terminal-dialog-footer button {
+      padding: 6px 20px; border-radius: 6px; border: none;
+      cursor: pointer; font-size: 13px;
+    }
+    #web-terminal-start-btn {
+      background: var(--accent); color: var(--bg-base); font-weight: 600;
+    }
+    #web-terminal-start-btn:hover { opacity: 0.9; }
+    #web-terminal-stop-btn {
+      background: var(--red); color: var(--bg-base); font-weight: 600;
+      display: none;
+    }
+    #web-terminal-stop-btn:hover { opacity: 0.9; }
   </style>
 </head>
 <body>
@@ -1070,6 +1132,7 @@
       <button id="btn-settings" title="設定" style="-webkit-app-region: no-drag; background: transparent; border: none; color: rgba(255,255,255,0.3); cursor: pointer; font-size: 13px; padding: 0 6px; border-radius: 3px; transition: color 0.1s;">&#9881;</button>
       <button id="btn-share" title="Share">&#128279;</button>
       <button id="btn-connect" title="Connect">&#128268;</button>
+      <button id="btn-web-terminal" title="Web Terminal">&#128241;</button>
       <div class="controls">
         <button id="btn-minimize" title="最小化">&#8211;</button>
         <button id="btn-maximize" title="最大化">&#9633;</button>
@@ -1330,6 +1393,40 @@
       <div class="connect-dialog-footer">
         <button id="connect-cancel-btn" data-i18n="cancel">Cancel</button>
         <button id="connect-btn" data-i18n="connect">Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Web Terminal dialog -->
+  <div id="web-terminal-dialog">
+    <div class="web-terminal-dialog-box">
+      <div class="web-terminal-dialog-header">
+        <h2 data-i18n="webTerminal">Web Terminal</h2>
+        <button id="web-terminal-dialog-close">&#10005;</button>
+      </div>
+      <div class="web-terminal-dialog-body">
+        <div id="web-terminal-inactive-view">
+          <p style="color: var(--fg-sub); font-size: 13px;" data-i18n="webTerminalDescription">Start a web terminal server (ttyd) to access this terminal from a phone or browser.</p>
+        </div>
+        <div id="web-terminal-active-view" style="display: none;">
+          <span class="share-status-badge active" data-i18n="running">Running</span>
+          <img id="web-terminal-qr" alt="QR Code" width="200" height="200" style="margin-top: 12px;">
+          <div id="web-terminal-tailscale-url" class="web-terminal-url tailscale" style="display: none;"></div>
+          <div id="web-terminal-local-url" class="web-terminal-url"></div>
+          <div class="web-terminal-cred">
+            <span class="label">Username</span>
+            <span class="value" id="web-terminal-username"></span>
+          </div>
+          <div class="web-terminal-cred">
+            <span class="label">Password</span>
+            <span class="value" id="web-terminal-password"></span>
+          </div>
+        </div>
+        <div id="web-terminal-error"></div>
+      </div>
+      <div class="web-terminal-dialog-footer">
+        <button id="web-terminal-start-btn" data-i18n="startWebTerminal">Start</button>
+        <button id="web-terminal-stop-btn" data-i18n="stopWebTerminal">Stop</button>
       </div>
     </div>
   </div>

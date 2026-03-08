@@ -6,6 +6,8 @@ import * as os from 'os';
 import * as pty from '@homebridge/node-pty-prebuilt-multiarch';
 import { StringDecoder } from 'string_decoder';
 import { spawn, execFileSync } from 'child_process';
+import * as http from 'http';
+import { WebSocketServer, WebSocket } from 'ws';
 import { SharingServer, SharingClient, SharedTabInfo } from './sharing';
 import * as QRCode from 'qrcode';
 
@@ -33,6 +35,9 @@ const sshSessions = new Map<number, { conn: SSHClient; stream: NodeJS.ReadWriteS
 let nextPtyId = 1;
 let sharingServer: SharingServer | null = null;
 let sharingClient: SharingClient | null = null;
+let webTerminalServer: http.Server | null = null;
+let webTerminalWss: WebSocketServer | null = null;
+let webTerminalPty: pty.IPty | null = null;
 
 // ---- Platform detection ----
 
@@ -310,6 +315,10 @@ function createWindow(): void {
       try { ssh.conn.end(); } catch (_) { /* ignore */ }
     }
     sshSessions.clear();
+    if (webTerminalPty) { try { webTerminalPty.kill(); } catch {} webTerminalPty = null; }
+    if (webTerminalWss) { try { webTerminalWss.close(); } catch {} webTerminalWss = null; }
+    if (webTerminalServer) { try { webTerminalServer.close(); } catch {} webTerminalServer = null; }
+    sharingServer?.stop();
     mainWindow = null;
   });
 }
@@ -757,6 +766,150 @@ app.whenReady().then(() => {
   // Send input to remote host
   ipcMain.on('share-remote-input', (_event, { tabId, data }: { tabId: number; data: string }) => {
     sharingClient?.sendInput(tabId, data);
+  });
+
+  // ---- Web Terminal (built-in server) ----
+
+  function getNetworkIPs(): { local: string; tailscale: string | null } {
+    const interfaces = os.networkInterfaces();
+    let local = '127.0.0.1';
+    let tailscale: string | null = null;
+    for (const addrs of Object.values(interfaces)) {
+      for (const addr of addrs!) {
+        if (addr.family === 'IPv4' && !addr.internal) {
+          if (addr.address.startsWith('100.')) {
+            tailscale = addr.address;
+          } else if (local === '127.0.0.1') {
+            local = addr.address;
+          }
+        }
+      }
+    }
+    return { local, tailscale };
+  }
+
+  function stopWebTerminal(): void {
+    if (webTerminalPty) { try { webTerminalPty.kill(); } catch {} webTerminalPty = null; }
+    for (const client of webTerminalWss?.clients ?? []) {
+      try { client.close(); } catch {}
+    }
+    if (webTerminalWss) { try { webTerminalWss.close(); } catch {} webTerminalWss = null; }
+    if (webTerminalServer) { try { webTerminalServer.close(); } catch {} webTerminalServer = null; }
+  }
+
+  ipcMain.handle('web-terminal-start', async (_event, { port: requestedPort }: { port?: number }) => {
+    stopWebTerminal();
+
+    const shells = detectShells();
+    const prefs = loadPrefs();
+    const found = shells.find(s => s.id === prefs.defaultShellId) ?? shells[0];
+    const shellExe = found?.exe ?? (isMac ? '/bin/zsh' : (process.env.SHELL ?? '/bin/bash'));
+    const port = requestedPort || 7681;
+    const password = Math.random().toString(36).slice(2, 10);
+
+    // Read the custom HTML page and embed token
+    const htmlPath = path.join(__dirname, '..', 'assets', 'web-terminal.html');
+    const htmlTemplate = fs.readFileSync(htmlPath, 'utf8');
+    const htmlContent = htmlTemplate.replace('__WS_TOKEN__', password);
+
+    // Basic auth check
+    const expectedAuth = 'Basic ' + Buffer.from(`infiniterm:${password}`).toString('base64');
+
+    // HTTP server for the HTML page
+    webTerminalServer = http.createServer((req, res) => {
+      const auth = req.headers.authorization;
+      if (auth !== expectedAuth) {
+        res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="infiniterm"' });
+        res.end('Unauthorized');
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(htmlContent);
+    });
+
+    // WebSocket server on same port
+    webTerminalWss = new WebSocketServer({ server: webTerminalServer, path: '/ws' });
+
+    webTerminalWss.on('connection', (ws: WebSocket, req) => {
+      // Auth check on WebSocket upgrade
+      const auth = req.headers.authorization;
+      if (auth !== expectedAuth) {
+        // Also check URL params for auth (mobile browsers may not send auth header on WS)
+        const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
+        const token = url.searchParams.get('token');
+        if (token !== password) {
+          ws.close(1008, 'Unauthorized');
+          return;
+        }
+      }
+
+      // Spawn PTY for this WebSocket session
+      const env = resolveShellEnv(shellExe);
+      const ptyProc = pty.spawn(shellExe, [], {
+        name: 'xterm-256color',
+        cols: 80,
+        rows: 24,
+        cwd: os.homedir(),
+        env,
+      });
+
+      webTerminalPty = ptyProc;
+
+      ptyProc.onData((data: string) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(data);
+        }
+      });
+
+      ptyProc.onExit(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.close();
+        }
+      });
+
+      ws.on('message', (msg: Buffer | string) => {
+        const str = msg.toString();
+        // Check for resize messages
+        try {
+          const parsed = JSON.parse(str);
+          if (parsed.type === 'resize' && parsed.cols && parsed.rows) {
+            ptyProc.resize(Math.max(1, parsed.cols), Math.max(1, parsed.rows));
+            return;
+          }
+        } catch { /* not JSON, treat as input */ }
+        ptyProc.write(str);
+      });
+
+      ws.on('close', () => {
+        try { ptyProc.kill(); } catch {}
+        if (webTerminalPty === ptyProc) webTerminalPty = null;
+      });
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      webTerminalServer!.listen(port, '0.0.0.0', () => resolve());
+      webTerminalServer!.on('error', reject);
+    });
+
+    const ips = getNetworkIPs();
+    const localUrl = `http://infiniterm:${password}@${ips.local}:${port}`;
+    const tailscaleUrl = ips.tailscale ? `http://infiniterm:${password}@${ips.tailscale}:${port}` : null;
+    const qrTarget = tailscaleUrl ?? localUrl;
+    const qrDataUrl = await QRCode.toDataURL(qrTarget, { width: 200, margin: 2 });
+
+    return {
+      port,
+      username: 'infiniterm',
+      password,
+      localUrl: `http://${ips.local}:${port}`,
+      tailscaleUrl: ips.tailscale ? `http://${ips.tailscale}:${port}` : null,
+      qrDataUrl,
+    };
+  });
+
+  ipcMain.on('web-terminal-stop', () => {
+    stopWebTerminal();
+    mainWindow?.webContents.send('web-terminal-stopped');
   });
 
   mainWindow?.webContents.setWindowOpenHandler(({ url }) => {

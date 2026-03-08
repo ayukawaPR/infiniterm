@@ -75,6 +75,15 @@ const translations: Record<string, Record<string, string>> = {
     connectFailed: '接続に失敗しました',
     remoteDisconnected: 'リモート接続が切断されました',
     remoteTab: 'リモート',
+    // Web Terminal
+    webTerminal: 'Web ターミナル',
+    webTerminalDescription: 'Web ターミナルサーバー (ttyd) を起動して、スマホやブラウザからターミナルにアクセスします。',
+    startWebTerminal: '起動',
+    stopWebTerminal: '停止',
+    running: '実行中',
+    ttydNotInstalled: 'ttyd がインストールされていません。brew install ttyd でインストールしてください。',
+    tailscaleLabel: 'Tailscale',
+    localLabel: 'ローカル',
   },
   en: {
     settings: 'Settings',
@@ -146,6 +155,14 @@ const translations: Record<string, Record<string, string>> = {
     connectFailed: 'Connection failed',
     remoteDisconnected: 'Remote connection lost',
     remoteTab: 'Remote',
+    webTerminal: 'Web Terminal',
+    webTerminalDescription: 'Start a web terminal server (ttyd) to access this terminal from a phone or browser.',
+    startWebTerminal: 'Start',
+    stopWebTerminal: 'Stop',
+    running: 'Running',
+    ttydNotInstalled: 'ttyd is not installed. Install with: brew install ttyd',
+    tailscaleLabel: 'Tailscale',
+    localLabel: 'Local',
   },
 };
 

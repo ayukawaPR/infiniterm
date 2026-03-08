@@ -78,6 +78,11 @@ declare global {
       shareRemoteInput: (tabId: number, data: string) => void;
       onShareRemoteMessage: (callback: (msg: any) => void) => () => void;
       onShareRemoteDisconnected: (callback: () => void) => () => void;
+      // Web Terminal
+      webTerminalStart: (opts?: { port?: number }) => Promise<{ port: number; username: string; password: string; localUrl: string; tailscaleUrl: string | null; qrDataUrl: string }>;
+      webTerminalStop: () => void;
+      onWebTerminalStopped: (callback: () => void) => () => void;
+      onWebTerminalError: (callback: (msg: string) => void) => () => void;
     };
   }
 }
@@ -1234,6 +1239,9 @@ document.addEventListener('keydown', (e) => {
     if (connectDialog.classList.contains('open')) {
       e.preventDefault(); e.stopPropagation(); closeConnectDialog(); return;
     }
+    if (webTerminalDialog.classList.contains('open')) {
+      e.preventDefault(); e.stopPropagation(); closeWebTerminalDialog(); return;
+    }
   }
   if (settingsDialog.classList.contains('open') && e.key === 'Escape') {
     e.preventDefault();
@@ -1964,6 +1972,101 @@ function handleRemoteMessage(msg: any): void {
     }
   }
 }
+
+// ---- Web Terminal dialog ----
+
+const webTerminalDialog = document.getElementById('web-terminal-dialog')!;
+const webTerminalDialogClose = document.getElementById('web-terminal-dialog-close')!;
+const webTerminalStartBtn = document.getElementById('web-terminal-start-btn')!;
+const webTerminalStopBtn = document.getElementById('web-terminal-stop-btn')!;
+const webTerminalInactiveView = document.getElementById('web-terminal-inactive-view')!;
+const webTerminalActiveView = document.getElementById('web-terminal-active-view')!;
+const webTerminalQrImg = document.getElementById('web-terminal-qr') as HTMLImageElement;
+const webTerminalLocalUrl = document.getElementById('web-terminal-local-url')!;
+const webTerminalTailscaleUrl = document.getElementById('web-terminal-tailscale-url')!;
+const webTerminalUsername = document.getElementById('web-terminal-username')!;
+const webTerminalPassword = document.getElementById('web-terminal-password')!;
+const webTerminalError = document.getElementById('web-terminal-error')!;
+
+let isWebTerminalRunning = false;
+
+function openWebTerminalDialog(): void {
+  webTerminalDialog.classList.add('open');
+  webTerminalError.textContent = '';
+  updateWebTerminalView();
+}
+
+function closeWebTerminalDialog(): void {
+  webTerminalDialog.classList.remove('open');
+  const session = sessions.get(activeTabId);
+  if (session) session.term.focus();
+}
+
+function updateWebTerminalView(): void {
+  if (isWebTerminalRunning) {
+    webTerminalInactiveView.style.display = 'none';
+    webTerminalActiveView.style.display = '';
+    webTerminalStartBtn.style.display = 'none';
+    webTerminalStopBtn.style.display = '';
+  } else {
+    webTerminalInactiveView.style.display = '';
+    webTerminalActiveView.style.display = 'none';
+    webTerminalStartBtn.style.display = '';
+    webTerminalStopBtn.style.display = 'none';
+  }
+}
+
+webTerminalStartBtn.addEventListener('click', async () => {
+  webTerminalError.textContent = '';
+  try {
+    const info = await window.electronAPI.webTerminalStart();
+    isWebTerminalRunning = true;
+
+    webTerminalQrImg.src = info.qrDataUrl;
+    webTerminalLocalUrl.textContent = info.localUrl;
+
+    if (info.tailscaleUrl) {
+      webTerminalTailscaleUrl.textContent = `${t('tailscaleLabel')}: ${info.tailscaleUrl}`;
+      webTerminalTailscaleUrl.style.display = '';
+    } else {
+      webTerminalTailscaleUrl.style.display = 'none';
+    }
+
+    webTerminalUsername.textContent = info.username;
+    webTerminalPassword.textContent = info.password;
+
+    updateWebTerminalView();
+  } catch (err: any) {
+    const msg = err?.message ?? String(err);
+    if (msg.includes('not installed')) {
+      webTerminalError.textContent = t('ttydNotInstalled');
+    } else {
+      webTerminalError.textContent = msg;
+    }
+  }
+});
+
+webTerminalStopBtn.addEventListener('click', () => {
+  window.electronAPI.webTerminalStop();
+  isWebTerminalRunning = false;
+  updateWebTerminalView();
+});
+
+webTerminalDialogClose.addEventListener('click', closeWebTerminalDialog);
+webTerminalDialog.addEventListener('click', (e) => {
+  if (e.target === webTerminalDialog) closeWebTerminalDialog();
+});
+
+document.getElementById('btn-web-terminal')!.addEventListener('click', openWebTerminalDialog);
+
+window.electronAPI.onWebTerminalStopped(() => {
+  isWebTerminalRunning = false;
+  if (webTerminalDialog.classList.contains('open')) updateWebTerminalView();
+});
+
+window.electronAPI.onWebTerminalError((msg) => {
+  webTerminalError.textContent = msg;
+});
 
 // ---- Boot ----
 

@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>infiniterm</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: #1e1e2e; overflow: hidden; touch-action: none; }
+#terminal-container {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 79px;
+  overflow: hidden; clip-path: inset(0);
+}
+#terminal-clip {
+  position: fixed; top: 0; left: 0; right: 0; overflow-x: auto; overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+.xterm { cursor: text; position: relative; user-select: none; }
+.xterm.focus, .xterm:focus { outline: none; }
+.xterm .xterm-helpers { position: absolute; top: 0; z-index: 5; }
+.xterm .xterm-helper-textarea {
+  border: 0; height: 0; left: -9999em; margin: 0; opacity: 0;
+  overflow: hidden; padding: 0; position: absolute; resize: none;
+  top: 0; white-space: nowrap; width: 0; z-index: -5;
+}
+.xterm .xterm-viewport {
+  background-color: #1e1e2e; bottom: 0; cursor: default;
+  left: 0; overflow-y: scroll; position: absolute; right: 0; top: 0;
+}
+.xterm .xterm-screen { position: relative; }
+.xterm .xterm-screen canvas { left: 0; position: absolute; top: 0; }
+
+/* Width control bar (top) */
+#width-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 99999;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  height: 32px; background: rgba(26,26,26,0.85);
+  border-bottom: 1px solid #444;
+  font-family: -apple-system, 'Helvetica Neue', sans-serif;
+  -webkit-user-select: none; user-select: none;
+}
+.width-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 44px; height: 26px; border-radius: 4px;
+  border: 1px solid #555; background: #333; color: #ccc;
+  font-size: 16px; font-weight: 700; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.width-btn:active { background: rgba(255,255,255,0.15); }
+#width-label { color: #89b4fa; font-size: 12px; font-weight: 600; min-width: 56px; text-align: center; }
+
+/* Heatmap bar */
+#heatmap { position: absolute; left: 0; right: 0; height: 3px; z-index: 99998; background: #111; }
+
+/* Control bar */
+#ctrl-bar {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 99999;
+  background: #1a1a1a; border-top: 1px solid #444;
+  font-family: -apple-system, 'Helvetica Neue', sans-serif;
+  -webkit-user-select: none; user-select: none;
+}
+.ctrl-row { display: flex; height: 38px; }
+.ctrl-key {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  color: #ccc; font-size: 13px; font-weight: 600; letter-spacing: 0.5px;
+  border: none; background: transparent; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  padding: 0; margin: 0; outline: none; touch-action: manipulation;
+}
+.ctrl-key:active { background: rgba(255,255,255,0.15); }
+.ctrl-key.active { background: rgba(100,149,237,0.5); color: #fff; }
+#menu-btn { flex: 0 0 44px; font-size: 18px; }
+
+
+/* Menu overlay */
+#menu-overlay {
+  display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 100000; background: rgba(0,0,0,0.6);
+  font-family: -apple-system, 'Helvetica Neue', sans-serif;
+}
+#menu-overlay.open { display: flex; align-items: flex-end; justify-content: center; }
+#menu-panel {
+  width: 100%; max-width: 400px; background: #2a2a3a; border-radius: 16px 16px 0 0;
+  padding: 16px 0 env(safe-area-inset-bottom, 16px);
+}
+#menu-panel h3 {
+  color: #cdd6f4; font-size: 15px; padding: 0 20px 12px;
+  border-bottom: 1px solid #444; margin-bottom: 4px;
+}
+.menu-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 20px; color: #cdd6f4; font-size: 15px;
+  border: none; background: transparent; width: 100%;
+  text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.menu-item:active { background: rgba(255,255,255,0.08); }
+.menu-item .icon { font-size: 18px; width: 24px; text-align: center; }
+.menu-item .label { flex: 1; }
+.menu-item .value { color: #89b4fa; font-size: 13px; }
+.menu-item.disabled { opacity: 0.4; pointer-events: none; }
+.menu-sep { height: 1px; background: #444; margin: 4px 20px; }
+
+/* Reconnect banner */
+#reconnect-banner {
+  display: none; position: fixed; bottom: 90px; left: 16px; right: 16px;
+  z-index: 99998; background: #313244; border: 1px solid #89b4fa;
+  border-radius: 10px; padding: 14px 16px;
+  text-align: center; color: #cdd6f4; font-family: -apple-system, sans-serif;
+}
+#reconnect-banner button {
+  background: #89b4fa; color: #1e1e2e; border: none; border-radius: 6px;
+  padding: 8px 24px; font-size: 15px; font-weight: 600; margin-top: 8px;
+  cursor: pointer;
+}
+</style>
+</head>
+<body>
+<div id="width-bar">
+  <button class="width-btn" id="width-shrink">&minus;</button>
+  <span id="width-label"></span>
+  <button class="width-btn" id="width-expand">+</button>
+</div>
+<div id="terminal-clip">
+  <div id="terminal-container"></div>
+</div>
+<canvas id="heatmap"></canvas>
+
+<div id="reconnect-banner">
+  <div>Connection closed</div>
+  <button id="reconnect-btn">Reconnect</button>
+</div>
+
+<div id="ctrl-bar">
+  <div class="ctrl-row">
+    <button class="ctrl-key" id="menu-btn">&#9776;</button>
+    <button class="ctrl-key" data-key="Escape">ESC</button>
+    <button class="ctrl-key" data-key="/">/</button>
+    <button class="ctrl-key" data-key="-">&minus;</button>
+    <button class="ctrl-key" data-key="Home">HOME</button>
+    <button class="ctrl-key" data-key="ArrowUp">&uarr;</button>
+    <button class="ctrl-key" data-key="End">END</button>
+    <button class="ctrl-key" data-key="PageUp">PGUP</button>
+  </div>
+  <div class="ctrl-row">
+    <button class="ctrl-key" data-key="Tab">TAB</button>
+    <button class="ctrl-key sticky" data-modifier="ctrl">CTRL</button>
+    <button class="ctrl-key sticky" data-modifier="alt">ALT</button>
+    <button class="ctrl-key" data-key="ArrowLeft">&larr;</button>
+    <button class="ctrl-key" data-key="ArrowDown">&darr;</button>
+    <button class="ctrl-key" data-key="ArrowRight">&rarr;</button>
+    <button class="ctrl-key" data-key="PageDown">PGDN</button>
+  </div>
+</div>
+
+<div id="menu-overlay">
+  <div id="menu-panel">
+    <h3>infiniterm</h3>
+    <button class="menu-item" id="mi-reconnect">
+      <span class="icon">&#8635;</span><span class="label">Reconnect</span>
+    </button>
+    <button class="menu-item" id="mi-paste">
+      <span class="icon">&#128203;</span><span class="label">Paste</span>
+    </button>
+    <div class="menu-sep"></div>
+    <button class="menu-item" id="mi-font-down">
+      <span class="icon">A</span><span class="label">Font size &minus;</span>
+      <span class="value" id="font-size-val">36</span>
+    </button>
+    <button class="menu-item" id="mi-font-up">
+      <span class="icon">A</span><span class="label">Font size +</span>
+    </button>
+    <div class="menu-sep"></div>
+    <button class="menu-item" id="mi-wakelock">
+      <span class="icon">&#9728;</span><span class="label">Keep screen on</span>
+      <span class="value" id="wakelock-val">OFF</span>
+    </button>
+    <button class="menu-item" id="mi-orientation">
+      <span class="icon">&#128241;</span><span class="label">Orientation lock</span>
+      <span class="value" id="orientation-val">Auto</span>
+    </button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+<script>
+(function() {
+  var currentFontSize = 36;
+  var ws = null;
+  var connected = false;
+  var isAlternateScreen = false;
+
+  // --- Terminal setup ---
+  var term = new Terminal({
+    fontSize: currentFontSize,
+    fontFamily: 'Menlo, Consolas, monospace',
+    theme: { background: '#1e1e2e', foreground: '#cdd6f4', cursor: '#f5e0dc' },
+    cursorBlink: true,
+    allowProposedApi: true,
+  });
+  var fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+  term.open(document.getElementById('terminal-container'));
+  fitAddon.fit();
+
+  // --- Heatmap ---
+  var heatCanvas = document.getElementById('heatmap');
+  var heatCtx = heatCanvas.getContext('2d');
+  var activityMap = null; // Float64Array, one per column
+  var DECAY_MS = 5000;
+  var COLOR_SCALE = [
+    { s: 0.00, r: 180, g: 28,  b: 10  },
+    { s: 0.25, r: 220, g: 70,  b: 8   },
+    { s: 0.50, r: 255, g: 190, b: 0   },
+    { s: 0.75, r: 140, g: 100, b: 0   },
+    { s: 1.00, r: 55,  g: 32,  b: 0   },
+  ];
+
+  function computeScore(lastT, now) {
+    if (lastT === 0) return 0;
+    var age = now - lastT;
+    return Math.max(0, Math.min(1, Math.exp((-age / DECAY_MS) * 3)));
+  }
+  function scoreToColor(score) {
+    for (var i = 0; i < COLOR_SCALE.length - 1; i++) {
+      var lo = COLOR_SCALE[i], hi = COLOR_SCALE[i + 1];
+      if (score >= lo.s && score <= hi.s) {
+        var t = (score - lo.s) / (hi.s - lo.s);
+        return [
+          Math.round(lo.r + (hi.r - lo.r) * t),
+          Math.round(lo.g + (hi.g - lo.g) * t),
+          Math.round(lo.b + (hi.b - lo.b) * t)
+        ];
+      }
+    }
+    var last = COLOR_SCALE[COLOR_SCALE.length - 1];
+    return [last.r, last.g, last.b];
+  }
+
+  function initActivityMap() {
+    activityMap = new Float64Array(term.cols).fill(0);
+  }
+  initActivityMap();
+
+  // Track which columns have activity
+  term.onRender(function(ev) {
+    if (!activityMap || activityMap.length !== term.cols) initActivityMap();
+    var now = performance.now();
+    var buf = term.buffer.active;
+    for (var row = ev.start; row <= ev.end; row++) {
+      var line = buf.getLine(row);
+      if (!line) continue;
+      for (var col = 0; col < activityMap.length; col++) {
+        var cell = line.getCell(col);
+        if (cell) {
+          var ch = cell.getChars();
+          if (ch !== '' && ch !== ' ') activityMap[col] = now;
+        }
+      }
+    }
+  });
+
+  function renderHeatmap() {
+    if (!activityMap) return;
+    var W = heatCanvas.width;
+    var H = heatCanvas.height;
+    if (W <= 0 || H <= 0) return;
+    var now = performance.now();
+    var cols = activityMap.length;
+    var img = heatCtx.createImageData(W, H);
+    var d = img.data;
+    for (var px = 0; px < W; px++) {
+      var cStart = Math.floor((px / W) * cols);
+      var cEnd = Math.min(cols, Math.floor(((px + 1) / W) * cols) + 1);
+      var total = 0, cnt = 0;
+      for (var c = cStart; c < cEnd; c++) { total += computeScore(activityMap[c], now); cnt++; }
+      var score = cnt > 0 ? total / cnt : 0;
+      var rgb = scoreToColor(score);
+      for (var py = 0; py < H; py++) {
+        var idx = (py * W + px) * 4;
+        d[idx] = rgb[0]; d[idx+1] = rgb[1]; d[idx+2] = rgb[2]; d[idx+3] = 255;
+      }
+    }
+    heatCtx.putImageData(img, 0, 0);
+  }
+
+  var heatAnimId = null;
+  var heatLastFrame = 0;
+  function heatLoop(ts) {
+    heatAnimId = requestAnimationFrame(heatLoop);
+    if (ts - heatLastFrame < 50) return; // ~20fps
+    heatLastFrame = ts;
+    renderHeatmap();
+  }
+  heatAnimId = requestAnimationFrame(heatLoop);
+
+  // --- Virtual width: widen container beyond viewport, horizontal scroll ---
+  var viewportWidth = window.innerWidth;
+  var virtualWidth = viewportWidth; // starts at 1:1
+  var container = document.getElementById('terminal-container');
+  var STEP_COLS = 10; // expand/shrink by 10 columns at a time
+  var WIDTH_BAR_H = 32;
+
+  var widthLabel = document.getElementById('width-label');
+  function updateWidthLabel() {
+    widthLabel.textContent = term.cols + ' cols';
+  }
+
+  function applyVirtualWidth() {
+    container.style.width = virtualWidth + 'px';
+    container.style.transform = '';
+    var clipH = clip.offsetHeight;
+    if (clipH > 0) container.style.height = clipH + 'px';
+    fitAddon.fit();
+    // Trim container to exact terminal screen height (eliminate sub-row gap)
+    var screen = container.querySelector('.xterm-screen');
+    if (screen) {
+      var exactH = screen.offsetHeight;
+      container.style.height = exactH + 'px';
+      clip.style.height = exactH + 'px';
+    }
+    updateWidthLabel();
+  }
+
+  // Estimate char width from current cols and container width
+  function charWidth() {
+    return viewportWidth / Math.max(1, term.cols);
+  }
+
+  document.getElementById('width-expand').addEventListener('click', function() {
+    virtualWidth += Math.round(charWidth() * STEP_COLS);
+    virtualWidth = Math.min(virtualWidth, viewportWidth * 8);
+    applyVirtualWidth();
+    term.focus();
+  });
+  document.getElementById('width-shrink').addEventListener('click', function() {
+    virtualWidth -= Math.round(charWidth() * STEP_COLS);
+    virtualWidth = Math.max(viewportWidth, virtualWidth);
+    applyVirtualWidth();
+    term.focus();
+  });
+
+  // --- Touch gestures (single-finger pan only) ---
+  // Use capture phase so we intercept before xterm.js consumes events
+  var touchState = null;
+
+  document.addEventListener('touchstart', function(e) {
+    if (e.touches.length === 1) {
+      touchState = {
+        startX: e.touches[0].clientX,
+        startY: e.touches[0].clientY,
+        lastX: e.touches[0].clientX,
+        lastY: e.touches[0].clientY,
+        dirLocked: null,
+        vAccum: 0,
+      };
+    }
+  }, { capture: true, passive: false });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!touchState || e.touches.length !== 1) return;
+
+    var dy = e.touches[0].clientY - touchState.lastY;
+    var totalDX = e.touches[0].clientX - touchState.startX;
+    var totalDY = e.touches[0].clientY - touchState.startY;
+
+    if (!touchState.dirLocked && (Math.abs(totalDX) > 10 || Math.abs(totalDY) > 10)) {
+      touchState.dirLocked = Math.abs(totalDY) >= Math.abs(totalDX) ? 'v' : 'h';
+    }
+
+    if (touchState.dirLocked === 'v') {
+      if (isAlternateScreen) {
+        e.preventDefault();
+        e.stopPropagation();
+        touchState.vAccum += dy;
+        var lineH = 24;
+        var lines = Math.floor(Math.abs(touchState.vAccum) / lineH);
+        if (lines > 0) {
+          var dir = touchState.vAccum > 0 ? 1 : -1;
+          touchState.vAccum -= dir * lines * lineH;
+          // Dispatch synthetic WheelEvent at the user's touch position
+          // so tmux scrolls the correct pane
+          var viewport = container.querySelector('.xterm-screen');
+          if (viewport) {
+            for (var i = 0; i < lines; i++) {
+              viewport.dispatchEvent(new WheelEvent('wheel', {
+                deltaY: dir > 0 ? -120 : 120,
+                clientX: touchState.startX,
+                clientY: touchState.startY,
+                bubbles: true, cancelable: true,
+              }));
+            }
+          }
+        }
+      }
+    }
+
+    if (touchState.dirLocked === 'h') {
+      e.preventDefault();
+      var dx = e.touches[0].clientX - touchState.lastX;
+      clip.scrollLeft -= dx;
+    }
+
+    touchState.lastX = e.touches[0].clientX;
+    touchState.lastY = e.touches[0].clientY;
+  }, { capture: true, passive: false });
+
+  document.addEventListener('touchend', function(e) {
+    if (e.touches.length === 0) touchState = null;
+  }, { capture: true, passive: false });
+
+  // --- WebSocket ---
+  var token = '__WS_TOKEN__';
+  var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  var wsUrl = proto + '//' + location.host + '/ws?token=' + encodeURIComponent(token);
+
+  function connect() {
+    if (ws && ws.readyState <= 1) ws.close();
+    ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
+    document.getElementById('reconnect-banner').style.display = 'none';
+    ws.onopen = function() {
+      connected = true;
+      ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+    };
+    ws.onmessage = function(ev) {
+      if (typeof ev.data === 'string') {
+        // Track alternate screen buffer via escape sequences
+        if (ev.data.indexOf('\x1b[?1049h') !== -1) isAlternateScreen = true;
+        if (ev.data.indexOf('\x1b[?1049l') !== -1) isAlternateScreen = false;
+        term.write(ev.data);
+      } else {
+        var bytes = new Uint8Array(ev.data);
+        var str = new TextDecoder().decode(bytes);
+        if (str.indexOf('\x1b[?1049h') !== -1) isAlternateScreen = true;
+        if (str.indexOf('\x1b[?1049l') !== -1) isAlternateScreen = false;
+        term.write(bytes);
+      }
+    };
+    ws.onclose = function() {
+      connected = false;
+      term.write('\r\n\x1b[31m[Connection closed]\x1b[0m\r\n');
+      document.getElementById('reconnect-banner').style.display = 'block';
+      layoutViewport();
+    };
+    ws.onerror = function() { connected = false; };
+  }
+  connect();
+
+  term.onData(function(data) {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
+  });
+  term.onResize(function(size) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'resize', cols: size.cols, rows: size.rows }));
+    }
+    // Reset activity map on resize
+    initActivityMap();
+  });
+
+  // --- Reconnect ---
+  document.getElementById('reconnect-btn').addEventListener('click', function() {
+    term.clear(); connect(); term.focus();
+  });
+  document.getElementById('mi-reconnect').addEventListener('click', function() {
+    closeMenu(); term.clear(); connect(); term.focus();
+  });
+
+  // --- Layout ---
+  var clip = document.getElementById('terminal-clip');
+  var bar = document.getElementById('ctrl-bar');
+  var barH = bar.offsetHeight;
+  var HEATMAP_H = 3;
+
+  var fullHeight = window.innerHeight;
+  function layoutViewport() {
+    var vv = window.visualViewport;
+    if (!vv) return;
+    var visibleH = vv.height;
+    var offsetTop = vv.offsetTop;
+    var keyboardOpen = (fullHeight - visibleH) > 100;
+    bar.style.display = keyboardOpen ? '' : 'none';
+    var activeBarH = keyboardOpen ? barH : 0;
+
+    // Ctrl bar
+    bar.style.position = 'fixed';
+    bar.style.bottom = 'auto';
+    bar.style.top = (offsetTop + visibleH - activeBarH) + 'px';
+
+    // Heatmap just above ctrl bar (or at bottom when no keyboard)
+    heatCanvas.style.position = 'fixed';
+    heatCanvas.style.left = '0';
+    heatCanvas.style.right = '0';
+    heatCanvas.style.height = HEATMAP_H + 'px';
+    heatCanvas.style.top = (offsetTop + visibleH - activeBarH - HEATMAP_H) + 'px';
+    heatCanvas.width = window.innerWidth;
+    heatCanvas.height = HEATMAP_H;
+
+    // Width bar: show only when keyboard is open (alongside ctrl bar)
+    var widthBar = document.getElementById('width-bar');
+    widthBar.style.display = keyboardOpen ? '' : 'none';
+    var activeWidthBarH = keyboardOpen ? WIDTH_BAR_H : 0;
+    widthBar.style.top = offsetTop + 'px';
+
+    // Clip wrapper: below width bar, above heatmap
+    var termH = visibleH - activeBarH - HEATMAP_H - activeWidthBarH;
+    var clipTop = offsetTop + activeWidthBarH;
+    clip.style.position = 'fixed';
+    clip.style.top = clipTop + 'px';
+    clip.style.left = '0';
+    clip.style.width = window.innerWidth + 'px';
+    clip.style.height = termH + 'px';
+    clip.style.overflowX = 'auto';
+    clip.style.overflowY = 'hidden';
+
+    // Terminal container
+    container.style.position = 'absolute';
+    container.style.top = '0';
+    container.style.left = '0';
+
+    // Update viewportWidth in case of orientation change
+    viewportWidth = window.innerWidth;
+    if (virtualWidth < viewportWidth) virtualWidth = viewportWidth;
+
+    applyVirtualWidth();
+
+    // After fit: reposition heatmap & ctrl-bar tight against terminal bottom
+    var actualClipH = parseInt(clip.style.height) || termH;
+    var termBottom = clipTop + actualClipH;
+    heatCanvas.style.top = termBottom + 'px';
+    bar.style.top = (termBottom + HEATMAP_H) + 'px';
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', layoutViewport);
+    window.visualViewport.addEventListener('scroll', layoutViewport);
+  }
+  window.addEventListener('resize', layoutViewport);
+  layoutViewport();
+
+  // --- Menu ---
+  var menuOverlay = document.getElementById('menu-overlay');
+  function openMenu() { menuOverlay.classList.add('open'); }
+  function closeMenu() { menuOverlay.classList.remove('open'); term.focus(); }
+  document.getElementById('menu-btn').addEventListener('touchstart', function(e) {
+    e.preventDefault(); openMenu();
+  }, { passive: false });
+  document.getElementById('menu-btn').addEventListener('mousedown', function(e) {
+    e.preventDefault(); openMenu();
+  });
+  menuOverlay.addEventListener('click', function(e) {
+    if (e.target === menuOverlay) closeMenu();
+  });
+
+  // --- Paste ---
+  document.getElementById('mi-paste').addEventListener('click', function() {
+    closeMenu();
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      navigator.clipboard.readText().then(function(text) {
+        if (text && ws && ws.readyState === WebSocket.OPEN) ws.send(text);
+        term.focus();
+      }).catch(function() { term.focus(); });
+    }
+  });
+
+  // --- Font size ---
+  function setFontSize(size) {
+    currentFontSize = Math.max(12, Math.min(72, size));
+    term.options.fontSize = currentFontSize;
+    document.getElementById('font-size-val').textContent = currentFontSize;
+    fitAddon.fit();
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+    }
+    initActivityMap();
+  }
+  document.getElementById('mi-font-up').addEventListener('click', function() { setFontSize(currentFontSize + 4); });
+  document.getElementById('mi-font-down').addEventListener('click', function() { setFontSize(currentFontSize - 4); });
+
+  // --- Wake Lock ---
+  var wakeLock = null, wakeLockOn = false;
+  document.getElementById('mi-wakelock').addEventListener('click', function() {
+    if (!('wakeLock' in navigator)) return;
+    if (wakeLockOn) {
+      if (wakeLock) { wakeLock.release(); wakeLock = null; }
+      wakeLockOn = false;
+      document.getElementById('wakelock-val').textContent = 'OFF';
+    } else {
+      navigator.wakeLock.request('screen').then(function(wl) {
+        wakeLock = wl; wakeLockOn = true;
+        document.getElementById('wakelock-val').textContent = 'ON';
+        wl.addEventListener('release', function() {
+          wakeLockOn = false;
+          document.getElementById('wakelock-val').textContent = 'OFF';
+        });
+      }).catch(function() {});
+    }
+  });
+  if (!('wakeLock' in navigator)) document.getElementById('mi-wakelock').classList.add('disabled');
+
+  // --- Orientation Lock ---
+  var orientationModes = ['auto', 'portrait', 'landscape'];
+  var orientationLabels = { auto: 'Auto', portrait: 'Portrait', landscape: 'Landscape' };
+  var currentOrientation = 0;
+  document.getElementById('mi-orientation').addEventListener('click', function() {
+    currentOrientation = (currentOrientation + 1) % orientationModes.length;
+    var mode = orientationModes[currentOrientation];
+    document.getElementById('orientation-val').textContent = orientationLabels[mode];
+    var sl = screen.orientation;
+    if (sl && sl.lock) {
+      if (mode === 'auto') sl.unlock();
+      else sl.lock(mode + '-primary').catch(function() {});
+    }
+  });
+  if (!(screen.orientation && screen.orientation.lock)) document.getElementById('mi-orientation').classList.add('disabled');
+
+  // --- Control bar: modifiers ---
+  var modifiers = { ctrl: false, alt: false };
+  function clearModifiers() {
+    modifiers.ctrl = false; modifiers.alt = false;
+    document.querySelectorAll('[data-modifier]').forEach(function(b) { b.classList.remove('active'); });
+  }
+  document.querySelectorAll('[data-modifier]').forEach(function(btn) {
+    function handleTap(e) {
+      e.preventDefault(); e.stopPropagation();
+      var mod = btn.getAttribute('data-modifier');
+      modifiers[mod] = !modifiers[mod];
+      btn.classList.toggle('active', modifiers[mod]);
+    }
+    btn.addEventListener('touchstart', handleTap, { passive: false });
+    btn.addEventListener('mousedown', handleTap);
+  });
+
+  function keyToSeq(key, ctrl, alt) {
+    if (ctrl && key.length === 1) {
+      var code = key.toUpperCase().charCodeAt(0);
+      if (code >= 65 && code <= 90) return String.fromCharCode(code - 64);
+    }
+    var seqMap = {
+      'Escape':'\x1b','Tab':'\t','ArrowUp':'\x1b[A','ArrowDown':'\x1b[B',
+      'ArrowRight':'\x1b[C','ArrowLeft':'\x1b[D','Home':'\x1b[H','End':'\x1b[F',
+      'PageUp':'\x1b[5~','PageDown':'\x1b[6~','/':'/','-':'-',
+    };
+    var seq = seqMap[key];
+    if (seq) { if (alt) seq = '\x1b' + seq; return seq; }
+    return key;
+  }
+
+  document.querySelectorAll('[data-key]').forEach(function(btn) {
+    function handleTap(e) {
+      e.preventDefault(); e.stopPropagation();
+      var key = btn.getAttribute('data-key');
+      var seq = keyToSeq(key, modifiers.ctrl, modifiers.alt);
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(seq);
+      clearModifiers(); term.focus();
+    }
+    btn.addEventListener('touchstart', handleTap, { passive: false });
+    btn.addEventListener('mousedown', handleTap);
+  });
+
+  document.addEventListener('beforeinput', function(e) {
+    if (!modifiers.ctrl && !modifiers.alt) return;
+    var ch = e.data; if (!ch) return;
+    e.preventDefault();
+    var seq = keyToSeq(ch, modifiers.ctrl, modifiers.alt);
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(seq);
+    clearModifiers();
+  }, true);
+  document.addEventListener('keydown', function(e) {
+    if (!modifiers.ctrl && !modifiers.alt) return;
+    if (e.key === 'Unidentified' || e.key === 'Process') return;
+    e.preventDefault(); e.stopPropagation();
+    var seq = keyToSeq(e.key, modifiers.ctrl || e.ctrlKey, modifiers.alt || e.altKey);
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(seq);
+    clearModifiers();
+  }, true);
+
+  term.focus();
+})();
+</script>
+</body>
+</html>
