@@ -1,44 +1,59 @@
 # infiniterm
 
-Windows 向け Electron ターミナルエミュレーター。MSYS2 zsh・PowerShell・CMD をタブで使えます。
-
-## 対応シェル
-
-| シェル | アイコン | 検出パス |
-|--------|---------|---------|
-| zsh (MSYS2) | 🐧 | `C:\msys64\usr\bin\zsh.exe` など |
-| bash (MSYS2) | 🐧 | `C:\msys64\usr\bin\bash.exe` など |
-| PowerShell 7 (pwsh) | 💠 | `C:\Program Files\PowerShell\7\pwsh.exe` |
-| PowerShell 5 | 🔵 | `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe` |
-| Command Prompt | ⬛ | `%COMSPEC%` |
-
-インストール済みのシェルが自動検出されます。
+クロスプラットフォーム対応の Electron ターミナルエミュレーター。タブ管理、テーマ、SSH、ターミナル共有、スマホからのブラウザアクセスなど多機能。
 
 ## 主な機能
 
 - **タブ管理** — 複数のシェルセッションをタブで切り替え
-- **シェルピッカー** — `+` ボタンからシェルを選択して新規タブを開く
-- **デフォルトシェル設定** — `~/.infiniterm.json` に保存、次回起動から自動適用
-- **日本語対応** — UTF-8 ロケール、和文フォント対応 (Cascadia Code / MS Gothic / BIZ UDGothic)
-- **tmux 互換** — `TERM=xterm-256color`、ConPTY 無効化済み
-- **カラーテーマ** — Catppuccin Mocha
-- **Web リンク** — URL をクリックでブラウザ起動
+- **シェル自動検出** — macOS (zsh, bash, fish)、Windows (MSYS2 zsh/bash, PowerShell, CMD) を自動検出
+- **SSH クライアント** — プロファイル管理、パスワード/鍵認証、接続履歴
+- **テーマ** — Catppuccin Mocha (デフォルト), Catppuccin Latte, Dracula, Nord, Tokyo Night
+- **ミニマップ** — ターミナル活動をヒートマップで可視化、横スクロール対応
+- **ターミナル共有** — 同一ネットワーク上の他の infiniterm インスタンスとセッションを共有
+- **Web ターミナル** — スマートフォンのブラウザからターミナルにアクセス (QR コード接続)
+- **国際化** — 日本語/英語 UI
+- **検索** — ターミナル内テキスト検索
+- **ファイルリンク** — パスをクリックしてエディタで開く (VS Code, Cursor, Emacs, Vim, Sublime)
 
-## 基本操作
+## Web ターミナル (モバイル対応)
 
-### シェルの選択・起動
+スマートフォンのブラウザからターミナルを操作できます。
 
-1. タブバー右端の `+` ボタンをクリック
-2. シェルピッカーが開くので、使いたいシェルを左クリック → 新しいタブが開く
+### 接続方法
 
-### デフォルトシェルの変更
+1. 設定画面から Web ターミナルを開始
+2. 表示される QR コードをスマートフォンで読み取り
+3. Basic 認証でログイン (ユーザー名: `infiniterm`、パスワードは自動生成)
 
-シェルピッカーでシェル名を**右クリック** → 「デフォルト」バッジが付き、次回から自動選択されます。
+Tailscale ネットワークがある場合は自動検出され、Tailscale IP 経由での接続も可能です。
 
-### タブの閉じ方
+### モバイル UI
 
-- タブの `×` ボタンをクリック
-- または `Ctrl+W`
+**ヘッダーバー** (常時表示):
+
+| ボタン | 機能 |
+|--------|------|
+| ≡ | メニュー (Reconnect, Wake Lock, 画面回転ロック) |
+| CP | コピー (選択テキスト) |
+| PT | ペースト (クリップボードから入力) |
+| A−/A+ | フォントサイズ変更 |
+| −/+ | 仮想横幅の縮小/拡張 (100%〜) |
+
+**コントロールキーバー** (キーボード表示時):
+
+```
+ESC  /  -  HOME  ↑  END  PGUP
+TAB  CTRL  ALT  ←  ↓  →  PGDN
+```
+
+- CTRL / ALT はスティッキー修飾キー (タップ → 英字キーで Ctrl+文字)
+
+**タッチ操作**:
+
+- 上下スワイプ — 通常バッファ: スクロールバック / tmux: ペイン内スクロール
+- 横スワイプ — 仮想横幅拡張時の横スクロール
+
+**ヒートマップ** — 画面下部に 3px の活動度ヒートマップを表示
 
 ## キーボードショートカット
 
@@ -46,44 +61,53 @@ Windows 向け Electron ターミナルエミュレーター。MSYS2 zsh・Power
 |--------------|------|
 | `Ctrl+T` | シェルピッカーを開く |
 | `Ctrl+W` | 現在のタブを閉じる |
-| `Ctrl+Tab` | 次のタブへ切り替え |
-| `Ctrl+Shift+Tab` | 前のタブへ切り替え |
-| `Ctrl+1` 〜 `Ctrl+9` | タブ番号で直接切り替え |
+| `Ctrl+Tab` | 次のタブへ |
+| `Ctrl+Shift+Tab` | 前のタブへ |
+| `Ctrl+1` 〜 `Ctrl+9` | タブ番号で切り替え |
+| `Ctrl+Shift+F` | 検索 |
+| `Ctrl+=` | ズームイン |
+| `Ctrl+-` | ズームアウト |
+| `Ctrl+0` | ズームリセット |
+| `F11` | フルスクリーン |
+| `Ctrl+Shift+→/←` | ターミナル幅の拡張/縮小 |
 
-## 必要環境
+## 対応シェル
 
-- Windows 10/11 (x64)
-- MSYS2 を使う場合: `C:\msys64` または `D:\msys64` にインストール済みであること
+### macOS / Linux
 
-## インストール
+zsh, bash, fish, sh (標準パス + Homebrew から自動検出)
 
-`release/` フォルダにある以下のいずれかを使用してください。
+### Windows
 
-- `infiniterm Setup 0.1.0.exe` — インストーラー版 (スタートメニュー・デスクトップショートカット作成)
-- `infiniterm-portable.exe` — ポータブル版 (インストール不要)
+| シェル | 検出パス |
+|--------|---------|
+| zsh (MSYS2) | `C:\msys64\usr\bin\zsh.exe` など |
+| bash (MSYS2) | `C:\msys64\usr\bin\bash.exe` など |
+| PowerShell 7 | `C:\Program Files\PowerShell\7\pwsh.exe` |
+| PowerShell 5 | `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe` |
+| Command Prompt | `%COMSPEC%` |
 
-## 開発者向け
+## 開発
 
 ### セットアップ
 
 ```bash
 npm run setup
-# 内部で npm install --ignore-scripts → node-pty パッチ適用 → ネイティブリビルドを実行
 ```
 
 ### ビルド & 起動
 
 ```bash
 npm run build   # TypeScript + webpack コンパイル
-# 起動:
-cmd /c "start D:\infiniterm\node_modules\.bin\electron.cmd D:\infiniterm"
-# または infiniterm.bat をダブルクリック
+npm start       # ビルド後に起動
 ```
 
 ### パッケージング
 
 ```bash
-npm run package   # release/ にインストーラーとポータブル版を生成
+npm run package      # 現在のプラットフォーム向け
+npm run package:mac  # macOS DMG
+npm run package:win  # Windows インストーラー + ポータブル
 ```
 
 ### 技術スタック
@@ -92,8 +116,12 @@ npm run package   # release/ にインストーラーとポータブル版を生
 |-------------|---------|
 | アプリフレーム | Electron 28 |
 | 言語 | TypeScript |
-| ターミナルUI | xterm.js v5 |
-| PTY (擬似端末) | @homebridge/node-pty-prebuilt-multiarch |
+| ターミナル UI | xterm.js v5 |
+| PTY | @homebridge/node-pty-prebuilt-multiarch |
+| SSH | ssh2 |
+| WebSocket | ws |
+| QR コード | qrcode |
+| バンドラ | webpack 5 |
 
 ## ライセンス
 

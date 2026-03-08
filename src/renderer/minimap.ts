@@ -51,6 +51,8 @@ export class HorizontalMinimap {
   private term: Terminal | null = null;
   private activityMap: Float64Array | null = null;
   private removeOnRender: (() => void) | null = null;
+  // Previous screen content: screenSnapshot[row][col] = char
+  private screenSnapshot: string[][] = [];
 
   // Scroll / virtual width state
   private viewWidth: number = 0;
@@ -117,21 +119,40 @@ export class HorizontalMinimap {
       ? activityMap
       : new Float64Array(term.cols).fill(0);
 
-    // Track renders — scan buffer cells to find which columns have content
+    // Track renders — compare each cell with previous snapshot per column
+    // A column lights up if ANY row in that column changed content.
+    this.screenSnapshot = [];
     const disposable = term.onRender(({ start, end }) => {
       const now = performance.now();
       const buf = term.buffer.active;
-      const colCount = this.activityMap!.length;
+      const cols = term.cols;
+
+      // Resize activityMap if terminal cols changed (virtual width expand/shrink)
+      if (this.activityMap!.length !== cols) {
+        const oldMap = this.activityMap!;
+        this.activityMap = new Float64Array(cols).fill(0);
+        // Preserve existing activity data
+        for (let i = 0; i < Math.min(oldMap.length, cols); i++) {
+          this.activityMap[i] = oldMap[i];
+        }
+        // Reset snapshots since column layout changed
+        this.screenSnapshot = [];
+      }
+
       for (let row = start; row <= end; row++) {
         const line = buf.getLine(row);
         if (!line) continue;
-        for (let col = 0; col < colCount; col++) {
+        // Ensure snapshot row exists with correct width
+        if (!this.screenSnapshot[row] || this.screenSnapshot[row].length !== cols) {
+          this.screenSnapshot[row] = new Array(cols).fill('');
+        }
+        const snapRow = this.screenSnapshot[row];
+        for (let col = 0; col < cols; col++) {
           const cell = line.getCell(col);
-          if (cell) {
-            const ch = cell.getChars();
-            if (ch !== '' && ch !== ' ') {
-              this.activityMap![col] = now;
-            }
+          const ch = cell ? (cell.getChars() || ' ') : ' ';
+          if (ch !== snapRow[col]) {
+            this.activityMap![col] = now;
+            snapRow[col] = ch;
           }
         }
       }
@@ -151,6 +172,7 @@ export class HorizontalMinimap {
     this.removeOnRender = null;
     this.term = null;
     this.activityMap = null;
+    this.screenSnapshot = [];
   }
 
   /** Call when the terminal stack (view) width changes. */
@@ -295,8 +317,8 @@ export class HorizontalMinimap {
     const imageData = this.ctx.createImageData(W, H);
     const data = imageData.data;
 
-    const cols = this.term.cols;
     const actMap = this.activityMap;
+    const cols = actMap.length; // Use activityMap length (matches current term.cols)
 
     // Precompute color per canvas pixel column
     const colColors = new Uint8Array(W * 3);
