@@ -48,6 +48,8 @@ html, body { height: 100%; background: #1e1e2e; overflow: hidden; touch-action: 
 }
 .width-btn:active { background: rgba(255,255,255,0.15); }
 #width-label { color: #89b4fa; font-size: 12px; font-weight: 600; min-width: 56px; text-align: center; }
+#font-label { color: #a6adc8; font-size: 12px; font-weight: 600; min-width: 32px; text-align: center; }
+.bar-sep { width: 1px; height: 18px; background: #555; margin: 0 2px; }
 
 /* Heatmap bar */
 #heatmap { position: absolute; left: 0; right: 0; height: 3px; z-index: 99998; background: #111; }
@@ -69,7 +71,6 @@ html, body { height: 100%; background: #1e1e2e; overflow: hidden; touch-action: 
 }
 .ctrl-key:active { background: rgba(255,255,255,0.15); }
 .ctrl-key.active { background: rgba(100,149,237,0.5); color: #fff; }
-#menu-btn { flex: 0 0 44px; font-size: 18px; }
 
 
 /* Menu overlay */
@@ -116,6 +117,15 @@ html, body { height: 100%; background: #1e1e2e; overflow: hidden; touch-action: 
 </head>
 <body>
 <div id="width-bar">
+  <button class="width-btn" id="menu-btn">&#9776;</button>
+  <div style="flex:1"></div>
+  <button class="width-btn" id="bar-copy">CP</button>
+  <button class="width-btn" id="bar-paste">PT</button>
+  <div class="bar-sep"></div>
+  <button class="width-btn" id="bar-font-down">A&minus;</button>
+  <span id="font-label"></span>
+  <button class="width-btn" id="bar-font-up">A+</button>
+  <div class="bar-sep"></div>
   <button class="width-btn" id="width-shrink">&minus;</button>
   <span id="width-label"></span>
   <button class="width-btn" id="width-expand">+</button>
@@ -132,7 +142,6 @@ html, body { height: 100%; background: #1e1e2e; overflow: hidden; touch-action: 
 
 <div id="ctrl-bar">
   <div class="ctrl-row">
-    <button class="ctrl-key" id="menu-btn">&#9776;</button>
     <button class="ctrl-key" data-key="Escape">ESC</button>
     <button class="ctrl-key" data-key="/">/</button>
     <button class="ctrl-key" data-key="-">&minus;</button>
@@ -157,17 +166,6 @@ html, body { height: 100%; background: #1e1e2e; overflow: hidden; touch-action: 
     <h3>infiniterm</h3>
     <button class="menu-item" id="mi-reconnect">
       <span class="icon">&#8635;</span><span class="label">Reconnect</span>
-    </button>
-    <button class="menu-item" id="mi-paste">
-      <span class="icon">&#128203;</span><span class="label">Paste</span>
-    </button>
-    <div class="menu-sep"></div>
-    <button class="menu-item" id="mi-font-down">
-      <span class="icon">A</span><span class="label">Font size &minus;</span>
-      <span class="value" id="font-size-val">36</span>
-    </button>
-    <button class="menu-item" id="mi-font-up">
-      <span class="icon">A</span><span class="label">Font size +</span>
     </button>
     <div class="menu-sep"></div>
     <button class="menu-item" id="mi-wakelock">
@@ -304,7 +302,8 @@ html, body { height: 100%; background: #1e1e2e; overflow: hidden; touch-action: 
 
   var widthLabel = document.getElementById('width-label');
   function updateWidthLabel() {
-    widthLabel.textContent = term.cols + ' cols';
+    var pct = Math.round(virtualWidth / viewportWidth * 100);
+    widthLabel.textContent = pct + '%';
   }
 
   function applyVirtualWidth() {
@@ -328,17 +327,20 @@ html, body { height: 100%; background: #1e1e2e; overflow: hidden; touch-action: 
     return viewportWidth / Math.max(1, term.cols);
   }
 
+  function blurKeyboard() {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  }
   document.getElementById('width-expand').addEventListener('click', function() {
+    blurKeyboard();
     virtualWidth += Math.round(charWidth() * STEP_COLS);
     virtualWidth = Math.min(virtualWidth, viewportWidth * 8);
     applyVirtualWidth();
-    term.focus();
   });
   document.getElementById('width-shrink').addEventListener('click', function() {
+    blurKeyboard();
     virtualWidth -= Math.round(charWidth() * STEP_COLS);
     virtualWidth = Math.max(viewportWidth, virtualWidth);
     applyVirtualWidth();
-    term.focus();
   });
 
   // --- Touch gestures (single-finger pan only) ---
@@ -417,6 +419,7 @@ html, body { height: 100%; background: #1e1e2e; overflow: hidden; touch-action: 
 
   function connect() {
     if (ws && ws.readyState <= 1) ws.close();
+    isAlternateScreen = false;
     ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
     document.getElementById('reconnect-banner').style.display = 'none';
@@ -461,10 +464,10 @@ html, body { height: 100%; background: #1e1e2e; overflow: hidden; touch-action: 
 
   // --- Reconnect ---
   document.getElementById('reconnect-btn').addEventListener('click', function() {
-    term.clear(); connect(); term.focus();
+    location.reload();
   });
   document.getElementById('mi-reconnect').addEventListener('click', function() {
-    closeMenu(); term.clear(); connect(); term.focus();
+    location.reload();
   });
 
   // --- Layout ---
@@ -497,10 +500,10 @@ html, body { height: 100%; background: #1e1e2e; overflow: hidden; touch-action: 
     heatCanvas.width = window.innerWidth;
     heatCanvas.height = HEATMAP_H;
 
-    // Width bar: show only when keyboard is open (alongside ctrl bar)
+    // Width bar: always visible at top
     var widthBar = document.getElementById('width-bar');
-    widthBar.style.display = keyboardOpen ? '' : 'none';
-    var activeWidthBarH = keyboardOpen ? WIDTH_BAR_H : 0;
+    widthBar.style.display = '';
+    var activeWidthBarH = WIDTH_BAR_H;
     widthBar.style.top = offsetTop + 'px';
 
     // Clip wrapper: below width bar, above heatmap
@@ -540,7 +543,10 @@ html, body { height: 100%; background: #1e1e2e; overflow: hidden; touch-action: 
 
   // --- Menu ---
   var menuOverlay = document.getElementById('menu-overlay');
-  function openMenu() { menuOverlay.classList.add('open'); }
+  function openMenu() {
+    blurKeyboard();
+    menuOverlay.classList.add('open');
+  }
   function closeMenu() { menuOverlay.classList.remove('open'); term.focus(); }
   document.getElementById('menu-btn').addEventListener('touchstart', function(e) {
     e.preventDefault(); openMenu();
@@ -552,30 +558,41 @@ html, body { height: 100%; background: #1e1e2e; overflow: hidden; touch-action: 
     if (e.target === menuOverlay) closeMenu();
   });
 
-  // --- Paste ---
-  document.getElementById('mi-paste').addEventListener('click', function() {
-    closeMenu();
+  // --- Copy / Paste (header bar) --- keyboard state unchanged
+  function doPaste() {
     if (navigator.clipboard && navigator.clipboard.readText) {
       navigator.clipboard.readText().then(function(text) {
         if (text && ws && ws.readyState === WebSocket.OPEN) ws.send(text);
-        term.focus();
-      }).catch(function() { term.focus(); });
+      }).catch(function() {});
     }
-  });
+  }
+  function doCopy() {
+    var sel = term.getSelection();
+    if (sel && navigator.clipboard) {
+      navigator.clipboard.writeText(sel).then(function() {
+        term.clearSelection();
+      }).catch(function() {});
+    }
+  }
+  document.getElementById('bar-paste').addEventListener('click', function() { doPaste(); });
+  document.getElementById('bar-copy').addEventListener('click', function() { doCopy(); });
 
-  // --- Font size ---
+  // --- Font size (header bar) --- hides keyboard
+  var fontLabel = document.getElementById('font-label');
   function setFontSize(size) {
+    blurKeyboard();
     currentFontSize = Math.max(12, Math.min(72, size));
     term.options.fontSize = currentFontSize;
-    document.getElementById('font-size-val').textContent = currentFontSize;
+    fontLabel.textContent = currentFontSize;
     fitAddon.fit();
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
     }
     initActivityMap();
   }
-  document.getElementById('mi-font-up').addEventListener('click', function() { setFontSize(currentFontSize + 4); });
-  document.getElementById('mi-font-down').addEventListener('click', function() { setFontSize(currentFontSize - 4); });
+  document.getElementById('bar-font-up').addEventListener('click', function() { setFontSize(currentFontSize + 4); });
+  document.getElementById('bar-font-down').addEventListener('click', function() { setFontSize(currentFontSize - 4); });
+  fontLabel.textContent = currentFontSize;
 
   // --- Wake Lock ---
   var wakeLock = null, wakeLockOn = false;
