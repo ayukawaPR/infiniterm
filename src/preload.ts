@@ -84,6 +84,31 @@ const electronAPI = {
   minimize: (): void => ipcRenderer.send('window-minimize'),
   maximize: (): void => ipcRenderer.send('window-maximize'),
   close: (): void => ipcRenderer.send('window-close'),
+  toggleFullscreen: (): void => ipcRenderer.send('window-fullscreen-toggle'),
+
+  // Keybindings
+  getKeybindings: (): Promise<Record<string, string | string[]>> =>
+    ipcRenderer.invoke('get-keybindings'),
+
+  // Open in editor
+  openInEditor: (opts: { file: string; line: number; col: number; cwd: string }): Promise<{ type: string; command?: string }> =>
+    ipcRenderer.invoke('open-in-editor', opts),
+
+  verifyFiles: (opts: { baseDir: string; candidates: string[] }): Promise<Array<{ name: string; exists: boolean; isDir: boolean; fullPath: string }>> =>
+    ipcRenderer.invoke('verify-files', opts),
+
+  getPtyCwd: (pid: number): Promise<string> =>
+    ipcRenderer.invoke('get-pty-cwd', { pid }),
+
+  // Settings
+  getSettings: (): Promise<Record<string, any>> =>
+    ipcRenderer.invoke('get-settings'),
+
+  saveSettings: (settings: Record<string, any>): void =>
+    ipcRenderer.send('save-settings', { settings }),
+
+  setWindowOpacity: (opacity: number): void =>
+    ipcRenderer.send('window-set-opacity', { opacity }),
 
   // SSH profiles
   sshProfilesList: (): Promise<SSHProfile[]> =>
@@ -111,6 +136,56 @@ const electronAPI = {
   // File dialog
   openFileDialog: (): Promise<string | null> =>
     ipcRenderer.invoke('dialog-open-file'),
+
+  // Sharing - host
+  shareStart: (opts: { tabs: Array<{ id: number; title: string; cols: number; rows: number }>; activeTabId: number }): Promise<{ port: number; code: string; ip: string; qrDataUrl: string; connectUrl: string }> =>
+    ipcRenderer.invoke('share-start', opts),
+
+  shareStop: (): void =>
+    ipcRenderer.send('share-stop'),
+
+  shareTabAdded: (tab: { id: number; title: string; cols: number; rows: number }): void =>
+    ipcRenderer.send('share-tab-added', { tab }),
+
+  shareTabRemoved: (tabId: number): void =>
+    ipcRenderer.send('share-tab-removed', { tabId }),
+
+  shareTabActivated: (tabId: number): void =>
+    ipcRenderer.send('share-tab-activated', { tabId }),
+
+  shareTabTitle: (tabId: number, title: string): void =>
+    ipcRenderer.send('share-tab-title', { tabId, title }),
+
+  shareTabResized: (tabId: number, cols: number, rows: number): void =>
+    ipcRenderer.send('share-tab-resized', { tabId, cols, rows }),
+
+  onShareClientCount: (callback: (count: number) => void): (() => void) => {
+    const handler = (_: Electron.IpcRendererEvent, count: number) => callback(count);
+    ipcRenderer.on('share-client-count', handler);
+    return () => ipcRenderer.removeListener('share-client-count', handler);
+  },
+
+  // Sharing - client
+  shareConnect: (opts: { host: string; port: number; code: string }): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('share-connect', opts),
+
+  shareDisconnect: (): void =>
+    ipcRenderer.send('share-disconnect'),
+
+  shareRemoteInput: (tabId: number, data: string): void =>
+    ipcRenderer.send('share-remote-input', { tabId, data }),
+
+  onShareRemoteMessage: (callback: (msg: any) => void): (() => void) => {
+    const handler = (_: Electron.IpcRendererEvent, msg: any) => callback(msg);
+    ipcRenderer.on('share-remote-message', handler);
+    return () => ipcRenderer.removeListener('share-remote-message', handler);
+  },
+
+  onShareRemoteDisconnected: (callback: () => void): (() => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('share-remote-disconnected', handler);
+    return () => ipcRenderer.removeListener('share-remote-disconnected', handler);
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

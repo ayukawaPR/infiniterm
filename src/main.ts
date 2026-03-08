@@ -5,6 +5,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as pty from '@homebridge/node-pty-prebuilt-multiarch';
 import { StringDecoder } from 'string_decoder';
+import { spawn, execFileSync } from 'child_process';
+import { SharingServer, SharingClient, SharedTabInfo } from './sharing';
+import * as QRCode from 'qrcode';
 
 // macOS: Chromium compositor の elastic overscroll を無効化 (app.ready より前に設定)
 app.commandLine.appendSwitch('disable-features', 'ElasticOverscroll');
@@ -28,6 +31,8 @@ let mainWindow: BrowserWindow | null = null;
 const ptyProcesses = new Map<number, pty.IPty>();
 const sshSessions = new Map<number, { conn: SSHClient; stream: NodeJS.ReadWriteStream }>();
 let nextPtyId = 1;
+let sharingServer: SharingServer | null = null;
+let sharingClient: SharingClient | null = null;
 
 // ---- Platform detection ----
 
@@ -195,6 +200,9 @@ const PREFS_FILE = path.join(os.homedir(), '.infiniterm.json');
 interface Prefs {
   defaultShellId: string;
   sshProfiles: SSHProfile[];
+  keybindings?: Record<string, string | string[]>;
+  editor?: string;
+  settings?: Record<string, any>;
 }
 
 function loadPrefs(): Prefs {
@@ -219,6 +227,50 @@ function resolveShellEnv(exe: string): { [key: string]: string } {
     return buildMsys2Env(msys2.root);
   }
   return buildBaseEnv();
+}
+
+// ---- Editor detection ----
+
+function detectEditor(): string {
+  const prefs = loadPrefs();
+  if (prefs.editor && prefs.editor !== 'auto') return prefs.editor;
+
+  if (process.env.VISUAL) return process.env.VISUAL;
+  if (process.env.EDITOR) return process.env.EDITOR;
+
+  const candidates = isMac
+    ? ['code', 'cursor', 'emacsclient', 'emacs', 'vim', 'nvim']
+    : ['code', 'cursor', 'emacs', 'vim', 'nvim'];
+  const which = isWin ? 'where.exe' : 'which';
+  for (const cmd of candidates) {
+    try {
+      execFileSync(which, [cmd], { stdio: 'ignore' });
+      return cmd;
+    } catch { /* not found */ }
+  }
+  return 'vim';
+}
+
+function buildEditorCommand(editor: string, file: string, line: number, col: number): { cmd: string; args: string[]; isGui: boolean } {
+  const basename = path.basename(editor).replace(/\.exe$/i, '').toLowerCase();
+
+  if (basename === 'code' || basename === 'cursor') {
+    return { cmd: editor, args: ['-g', `${file}:${line}:${col}`], isGui: true };
+  }
+  if (basename === 'emacsclient') {
+    return { cmd: editor, args: ['-n', `+${line}:${col}`, file], isGui: true };
+  }
+  if (basename === 'emacs') {
+    return { cmd: editor, args: [`+${line}:${col}`, file], isGui: true };
+  }
+  if (basename === 'subl' || basename === 'sublime_text') {
+    return { cmd: editor, args: [`${file}:${line}:${col}`], isGui: true };
+  }
+  // Terminal editors: vim, nvim, nano, etc.
+  if (basename === 'vim' || basename === 'nvim' || basename === 'vi') {
+    return { cmd: editor, args: [`+${line}`, file], isGui: false };
+  }
+  return { cmd: editor, args: [file], isGui: false };
 }
 
 // ---- Window ----
@@ -340,15 +392,17 @@ app.whenReady().then(() => {
 
     ptyProc.onData((data: string) => {
       mainWindow?.webContents.send('pty-data', { id, data });
+      sharingServer?.feedData(id, data);
     });
 
     ptyProc.onExit(({ exitCode, signal }) => {
       mainWindow?.webContents.send('pty-exit', { id, exitCode, signal });
       ptyProcesses.delete(id);
+      sharingServer?.removeTab(id);
     });
 
     ptyProcesses.set(id, ptyProc);
-    return { id, shell: exe };
+    return { id, shell: exe, pid: ptyProc.pid, cwd: os.homedir() };
   });
 
   // Input
@@ -461,14 +515,19 @@ app.whenReady().then(() => {
 
           const decoder = new StringDecoder('utf8');
           stream.on('data', (data: Buffer) => {
-            mainWindow?.webContents.send('pty-data', { id, data: decoder.write(data) });
+            const decoded = decoder.write(data);
+            mainWindow?.webContents.send('pty-data', { id, data: decoded });
+            sharingServer?.feedData(id, decoded);
           });
           stream.stderr?.on('data', (data: Buffer) => {
-            mainWindow?.webContents.send('pty-data', { id, data: decoder.write(data) });
+            const decoded = decoder.write(data);
+            mainWindow?.webContents.send('pty-data', { id, data: decoded });
+            sharingServer?.feedData(id, decoded);
           });
           stream.on('close', () => {
             mainWindow?.webContents.send('pty-exit', { id, exitCode: 0 });
             sshSessions.delete(id);
+            sharingServer?.removeTab(id);
             conn.end();
           });
         });
@@ -523,6 +582,182 @@ app.whenReady().then(() => {
     }
   });
   ipcMain.on('window-close', () => mainWindow?.close());
+  ipcMain.on('window-fullscreen-toggle', () => {
+    if (mainWindow) mainWindow.setFullScreen(!mainWindow.isFullScreen());
+  });
+
+  // Keybindings
+  ipcMain.handle('get-keybindings', () => {
+    return loadPrefs().keybindings ?? {};
+  });
+
+  // Settings
+  ipcMain.handle('get-settings', () => {
+    return loadPrefs().settings ?? {};
+  });
+
+  ipcMain.on('save-settings', (_event, { settings }: { settings: Record<string, any> }) => {
+    const prefs = loadPrefs();
+    prefs.settings = settings;
+    // Also sync editor preference
+    if (settings.editor) prefs.editor = settings.editor;
+    savePrefs(prefs);
+  });
+
+  ipcMain.on('window-set-opacity', (_event, { opacity }: { opacity: number }) => {
+    if (mainWindow) mainWindow.setOpacity(Math.max(0.3, Math.min(1, opacity)));
+  });
+
+  // Open file in editor
+  ipcMain.handle('open-in-editor', (_event, { file, line, col, cwd }: {
+    file: string; line: number; col: number; cwd: string;
+  }) => {
+    // Resolve relative paths
+    const resolvedFile = path.isAbsolute(file) ? file : path.resolve(cwd || os.homedir(), file);
+    const editor = detectEditor();
+    const { cmd, args, isGui } = buildEditorCommand(editor, resolvedFile, line, col);
+
+    if (isGui) {
+      spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
+      return { type: 'spawned' };
+    }
+    // Terminal editor - return command for renderer to send to PTY
+    return { type: 'command', command: `${cmd} ${args.join(' ')}` };
+  });
+
+  // Get PTY process CWD from OS
+  ipcMain.handle('get-pty-cwd', (_event, { pid }: { pid: number }) => {
+    try {
+      if (isMac) {
+        const out = execFileSync('lsof', ['-a', '-d', 'cwd', '-p', String(pid), '-Fn'],
+          { encoding: 'utf8', timeout: 3000 });
+        const match = out.match(/\nn(.*)/);
+        return match ? match[1] : '';
+      } else if (!isWin) {
+        return fs.readlinkSync(`/proc/${pid}/cwd`);
+      }
+      return '';
+    } catch { return ''; }
+  });
+
+  // Verify file existence
+  ipcMain.handle('verify-files', (_event, { baseDir, candidates }: {
+    baseDir: string; candidates: string[];
+  }) => {
+    return candidates.map(name => {
+      const fullPath = path.isAbsolute(name) ? name : path.join(baseDir, name);
+      try {
+        const stat = fs.statSync(fullPath);
+        return { name, exists: true, isDir: stat.isDirectory(), fullPath };
+      } catch {
+        return { name, exists: false, isDir: false, fullPath };
+      }
+    });
+  });
+
+  // ---- Sharing ----
+
+  // Start sharing server
+  ipcMain.handle('share-start', async (_event, { tabs, activeTabId }: {
+    tabs: SharedTabInfo[];
+    activeTabId: number;
+  }) => {
+    if (sharingServer) sharingServer.stop();
+
+    sharingServer = new SharingServer();
+
+    sharingServer.on('remote-input', (tabId: number, data: string) => {
+      const ptyProc = ptyProcesses.get(tabId);
+      if (ptyProc) {
+        try { ptyProc.write(data); } catch {}
+        return;
+      }
+      const ssh = sshSessions.get(tabId);
+      if (ssh) {
+        try { ssh.stream.write(data); } catch {}
+      }
+    });
+
+    sharingServer.on('client-connected', () => {
+      mainWindow?.webContents.send('share-client-count', sharingServer?.getClientCount() ?? 0);
+    });
+    sharingServer.on('client-disconnected', () => {
+      mainWindow?.webContents.send('share-client-count', sharingServer?.getClientCount() ?? 0);
+    });
+
+    const info = await sharingServer.start();
+
+    // Register existing tabs
+    for (const tab of tabs) {
+      sharingServer.addTab(tab);
+    }
+    sharingServer.setActiveTab(activeTabId);
+
+    // Generate QR code
+    const connectUrl = `infiniterm://${info.ip}:${info.port}/${info.code}`;
+    const qrDataUrl = await QRCode.toDataURL(connectUrl, { width: 200, margin: 2 });
+
+    return { ...info, qrDataUrl, connectUrl };
+  });
+
+  // Stop sharing
+  ipcMain.on('share-stop', () => {
+    sharingServer?.stop();
+    sharingServer = null;
+  });
+
+  // Notify sharing server of tab events from renderer
+  ipcMain.on('share-tab-added', (_event, { tab }: { tab: SharedTabInfo }) => {
+    sharingServer?.addTab(tab);
+  });
+
+  ipcMain.on('share-tab-removed', (_event, { tabId }: { tabId: number }) => {
+    sharingServer?.removeTab(tabId);
+  });
+
+  ipcMain.on('share-tab-activated', (_event, { tabId }: { tabId: number }) => {
+    sharingServer?.setActiveTab(tabId);
+  });
+
+  ipcMain.on('share-tab-title', (_event, { tabId, title }: { tabId: number; title: string }) => {
+    sharingServer?.setTabTitle(tabId, title);
+  });
+
+  ipcMain.on('share-tab-resized', (_event, { tabId, cols, rows }: { tabId: number; cols: number; rows: number }) => {
+    sharingServer?.resizeTab(tabId, cols, rows);
+  });
+
+  // Connect to remote host as client
+  ipcMain.handle('share-connect', async (_event, { host, port, code }: {
+    host: string; port: number; code: string;
+  }) => {
+    if (sharingClient) sharingClient.disconnect();
+
+    sharingClient = new SharingClient();
+
+    sharingClient.on('message', (msg: any) => {
+      mainWindow?.webContents.send('share-remote-message', msg);
+    });
+
+    sharingClient.on('disconnected', () => {
+      mainWindow?.webContents.send('share-remote-disconnected');
+      sharingClient = null;
+    });
+
+    await sharingClient.connect(host, port, code);
+    return { ok: true };
+  });
+
+  // Disconnect from remote
+  ipcMain.on('share-disconnect', () => {
+    sharingClient?.disconnect();
+    sharingClient = null;
+  });
+
+  // Send input to remote host
+  ipcMain.on('share-remote-input', (_event, { tabId, data }: { tabId: number; data: string }) => {
+    sharingClient?.sendInput(tabId, data);
+  });
 
   mainWindow?.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);

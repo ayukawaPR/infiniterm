@@ -734,6 +734,358 @@
     #width-overlay.visible {
       opacity: 1;
     }
+
+    /* ---- Search bar ---- */
+    #search-bar {
+      display: none;
+      position: absolute;
+      top: 0;
+      right: 20px;
+      z-index: 100;
+      background: var(--bg-mantle);
+      border: 1px solid var(--bg-surface);
+      border-top: none;
+      border-radius: 0 0 6px 6px;
+      padding: 6px 8px;
+      gap: 4px;
+      align-items: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    #search-bar.open { display: flex; }
+    #search-input {
+      background: var(--bg-surface);
+      border: 1px solid var(--bg-surface1);
+      border-radius: 4px;
+      color: var(--fg-base);
+      padding: 4px 8px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      width: 220px;
+    }
+    #search-input:focus { border-color: var(--accent); }
+    #search-count {
+      font-size: 11px;
+      color: var(--fg-sub);
+      min-width: 40px;
+      text-align: center;
+      white-space: nowrap;
+    }
+    #search-bar button {
+      width: 22px; height: 22px;
+      border: none; background: transparent;
+      color: var(--fg-sub); cursor: pointer;
+      border-radius: 3px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px;
+      flex-shrink: 0;
+    }
+    #search-bar button:hover { background: var(--bg-surface); color: var(--fg-base); }
+    #search-close:hover { background: var(--red); color: var(--bg-base); }
+
+    /* ---- Tab drag ---- */
+    .tab.dragging { opacity: 0.4; }
+    .tab.drag-over-left { box-shadow: -2px 0 0 var(--accent); }
+    .tab.drag-over-right { box-shadow: 2px 0 0 var(--accent); }
+
+    /* ---- Settings Dialog ---- */
+    #settings-dialog {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(2px);
+    }
+    #settings-dialog.open { display: flex; }
+    .settings-dialog-box {
+      background: var(--bg-mantle);
+      border: 1px solid var(--bg-surface);
+      border-radius: 10px;
+      width: 520px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+      overflow: hidden;
+    }
+    .settings-dialog-header {
+      display: flex;
+      align-items: center;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid var(--bg-surface);
+      gap: 8px;
+    }
+    .settings-dialog-header h2 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--fg-base);
+      flex: 1;
+    }
+    .settings-header-icon { font-size: 16px; }
+    #settings-dialog-close {
+      width: 24px; height: 24px; border: none; background: transparent;
+      color: var(--fg-sub); cursor: pointer; border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; transition: background 0.12s, color 0.12s;
+    }
+    #settings-dialog-close:hover { background: var(--red); color: var(--bg-base); }
+    .settings-dialog-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+    .settings-section {
+      padding: 8px 16px 12px;
+    }
+    .settings-section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--accent);
+      margin-bottom: 10px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid var(--bg-surface);
+    }
+    .settings-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 0;
+      gap: 12px;
+    }
+    .settings-row > label:first-child {
+      font-size: 13px;
+      color: var(--fg-base);
+      white-space: nowrap;
+      min-width: 140px;
+    }
+    .settings-row select,
+    .settings-row input[type="number"],
+    .settings-row input[type="text"] {
+      background: var(--bg-surface);
+      border: 1px solid var(--bg-surface1);
+      border-radius: 5px;
+      color: var(--fg-base);
+      padding: 5px 8px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.12s;
+      flex: 1;
+      min-width: 0;
+    }
+    .settings-row select { cursor: pointer; }
+    .settings-row select:focus,
+    .settings-row input:focus { border-color: var(--accent); }
+    .settings-row input[type="number"] { width: 100px; flex: 0; }
+    .settings-range-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+    }
+    .settings-range-wrap input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent);
+      height: 4px;
+    }
+    .settings-range-wrap span {
+      font-size: 12px;
+      color: var(--fg-sub);
+      min-width: 36px;
+      text-align: right;
+    }
+    /* Toggle switch */
+    .settings-toggle {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      display: inline-block;
+      cursor: pointer;
+    }
+    .settings-toggle input { display: none; }
+    .settings-toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: var(--bg-surface1);
+      border-radius: 11px;
+      transition: background 0.2s;
+    }
+    .settings-toggle-slider::after {
+      content: '';
+      position: absolute;
+      top: 3px; left: 3px;
+      width: 16px; height: 16px;
+      background: var(--fg-sub);
+      border-radius: 50%;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .settings-toggle input:checked + .settings-toggle-slider {
+      background: var(--accent);
+    }
+    .settings-toggle input:checked + .settings-toggle-slider::after {
+      transform: translateX(18px);
+      background: var(--bg-base);
+    }
+    .settings-dialog-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 12px 16px;
+      border-top: 1px solid var(--bg-surface);
+    }
+    #settings-save-btn {
+      padding: 8px 20px;
+      background: var(--accent);
+      color: var(--bg-base);
+      border: none;
+      border-radius: 5px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.12s;
+      font-family: inherit;
+    }
+    #settings-save-btn:hover { opacity: 0.85; }
+    #settings-cancel-btn {
+      padding: 8px 16px;
+      background: transparent;
+      color: var(--fg-sub);
+      border: 1px solid var(--bg-surface1);
+      border-radius: 5px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.12s;
+      font-family: inherit;
+    }
+    #settings-cancel-btn:hover { background: var(--bg-surface); color: var(--fg-base); }
+    #btn-settings:hover { color: var(--fg-base) !important; }
+    #btn-share, #btn-connect {
+      -webkit-app-region: no-drag; background: transparent; border: none;
+      color: rgba(255,255,255,0.3); cursor: pointer; font-size: 13px;
+      padding: 0 6px; border-radius: 3px; transition: color 0.1s;
+    }
+    #btn-share:hover, #btn-connect:hover { color: var(--fg-base) !important; }
+    .tab.remote-tab { border-left: 2px solid var(--accent); }
+    .tab.remote-tab .tab-title { font-style: italic; }
+
+    /* ---- Share dialog ---- */
+    #share-dialog {
+      display: none; position: fixed; inset: 0; z-index: 300;
+      background: rgba(0,0,0,0.5); align-items: center; justify-content: center;
+    }
+    #share-dialog.open { display: flex; }
+    .share-dialog-box {
+      background: var(--bg-base); border: 1px solid var(--bg-surface1);
+      border-radius: 10px; width: 420px; max-height: 80vh;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5); overflow: hidden;
+    }
+    .share-dialog-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px; border-bottom: 1px solid var(--bg-surface);
+    }
+    .share-dialog-header h2 { margin: 0; font-size: 14px; color: var(--fg-base); }
+    #share-dialog-close {
+      background: none; border: none; color: var(--fg-sub); cursor: pointer;
+      font-size: 16px; width: 24px; height: 24px; border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #share-dialog-close:hover { background: var(--red); color: var(--bg-base); }
+    .share-dialog-body { padding: 20px; text-align: center; }
+    .share-dialog-body img { display: block; margin: 0 auto 16px; border-radius: 8px; }
+    .share-code-display {
+      font-size: 32px; font-weight: bold; letter-spacing: 8px;
+      color: var(--accent); margin: 12px 0; font-family: monospace;
+    }
+    .share-info {
+      font-size: 12px; color: var(--fg-sub); margin: 8px 0;
+      word-break: break-all; user-select: all;
+    }
+    .share-client-count {
+      font-size: 12px; color: var(--fg-sub); margin: 8px 0;
+    }
+    .share-status-badge {
+      display: inline-block; padding: 2px 8px; border-radius: 10px;
+      font-size: 11px; font-weight: 600;
+    }
+    .share-status-badge.active { background: var(--green); color: var(--bg-base); }
+    .share-status-badge.inactive { background: var(--bg-surface1); color: var(--fg-sub); }
+    .share-dialog-footer {
+      padding: 12px 16px; border-top: 1px solid var(--bg-surface);
+      display: flex; justify-content: center; gap: 8px;
+    }
+    .share-dialog-footer button {
+      padding: 6px 20px; border-radius: 6px; border: none;
+      cursor: pointer; font-size: 13px;
+    }
+    #share-start-btn {
+      background: var(--accent); color: var(--bg-base); font-weight: 600;
+    }
+    #share-start-btn:hover { opacity: 0.9; }
+    #share-stop-btn {
+      background: var(--red); color: var(--bg-base); font-weight: 600;
+      display: none;
+    }
+    #share-stop-btn:hover { opacity: 0.9; }
+
+    /* ---- Connect dialog ---- */
+    #connect-dialog {
+      display: none; position: fixed; inset: 0; z-index: 300;
+      background: rgba(0,0,0,0.5); align-items: center; justify-content: center;
+    }
+    #connect-dialog.open { display: flex; }
+    .connect-dialog-box {
+      background: var(--bg-base); border: 1px solid var(--bg-surface1);
+      border-radius: 10px; width: 380px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5); overflow: hidden;
+    }
+    .connect-dialog-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px; border-bottom: 1px solid var(--bg-surface);
+    }
+    .connect-dialog-header h2 { margin: 0; font-size: 14px; color: var(--fg-base); }
+    #connect-dialog-close {
+      background: none; border: none; color: var(--fg-sub); cursor: pointer;
+      font-size: 16px; width: 24px; height: 24px; border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #connect-dialog-close:hover { background: var(--red); color: var(--bg-base); }
+    .connect-dialog-body { padding: 20px; }
+    .connect-dialog-body label {
+      display: block; font-size: 12px; color: var(--fg-sub); margin-bottom: 4px;
+    }
+    .connect-dialog-body input {
+      width: 100%; box-sizing: border-box; padding: 8px 10px;
+      background: var(--bg-surface); border: 1px solid var(--bg-surface1);
+      border-radius: 6px; color: var(--fg-base); font-size: 14px;
+      margin-bottom: 12px; font-family: monospace;
+    }
+    .connect-dialog-body input:focus {
+      outline: none; border-color: var(--accent);
+    }
+    #connect-status {
+      font-size: 12px; min-height: 16px; margin-bottom: 4px;
+    }
+    #connect-status.error { color: var(--red); }
+    #connect-status.success { color: var(--green); }
+    .connect-dialog-footer {
+      padding: 12px 16px; border-top: 1px solid var(--bg-surface);
+      display: flex; justify-content: flex-end; gap: 8px;
+    }
+    .connect-dialog-footer button {
+      padding: 6px 20px; border-radius: 6px; border: none;
+      cursor: pointer; font-size: 13px;
+    }
+    #connect-btn {
+      background: var(--accent); color: var(--bg-base); font-weight: 600;
+    }
+    #connect-btn:hover { opacity: 0.9; }
+    #connect-cancel-btn {
+      background: var(--bg-surface); color: var(--fg-base);
+    }
   </style>
 </head>
 <body>
@@ -741,6 +1093,9 @@
     <div id="titlebar">
       <span class="icon">❯❯</span>
       <span class="title" id="title-text">infiniterm</span>
+      <button id="btn-settings" title="設定" style="-webkit-app-region: no-drag; background: transparent; border: none; color: rgba(255,255,255,0.3); cursor: pointer; font-size: 13px; padding: 0 6px; border-radius: 3px; transition: color 0.1s;">&#9881;</button>
+      <button id="btn-share" title="Share">&#128279;</button>
+      <button id="btn-connect" title="Connect">&#128268;</button>
       <div class="controls">
         <button id="btn-minimize" title="最小化">&#8211;</button>
         <button id="btn-maximize" title="最大化">&#9633;</button>
@@ -757,7 +1112,15 @@
       </div>
     </div>
 
-    <div id="terminal-stack"></div>
+    <div id="terminal-stack">
+      <div id="search-bar">
+        <input type="text" id="search-input" placeholder="検索..." spellcheck="false" autocomplete="off">
+        <span id="search-count"></span>
+        <button id="search-prev" title="前へ (Shift+Enter)">&#9650;</button>
+        <button id="search-next" title="次へ (Enter)">&#9660;</button>
+        <button id="search-close" title="閉じる (Escape)">&#10005;</button>
+      </div>
+    </div>
     <div id="minimap-area">
       <div id="minimap-main">
         <canvas id="minimap-canvas"></canvas>
@@ -852,6 +1215,148 @@
           </div>
         </div>
 
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Dialog -->
+  <div id="settings-dialog">
+    <div class="settings-dialog-box">
+      <div class="settings-dialog-header">
+        <span class="settings-header-icon">&#9881;</span>
+        <h2 id="settings-title">設定</h2>
+        <button id="settings-dialog-close" title="閉じる">&#10005;</button>
+      </div>
+      <div class="settings-dialog-body">
+        <div class="settings-section">
+          <h3 class="settings-section-title" data-i18n="appearance">外観</h3>
+          <div class="settings-row">
+            <label data-i18n="theme">テーマ</label>
+            <select id="settings-theme"></select>
+          </div>
+          <div class="settings-row">
+            <label data-i18n="fontSize">フォントサイズ</label>
+            <input type="number" id="settings-font-size" min="8" max="32" value="14">
+          </div>
+          <div class="settings-row">
+            <label data-i18n="fontFamily">フォントファミリー</label>
+            <input type="text" id="settings-font-family" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="settings-row">
+            <label data-i18n="cursorStyle">カーソルスタイル</label>
+            <select id="settings-cursor-style">
+              <option value="block">ブロック</option>
+              <option value="underline">アンダーライン</option>
+              <option value="bar">バー</option>
+            </select>
+          </div>
+          <div class="settings-row">
+            <label data-i18n="windowOpacity">ウィンドウ透過度</label>
+            <div class="settings-range-wrap">
+              <input type="range" id="settings-opacity" min="30" max="100" value="100" step="5">
+              <span id="settings-opacity-value">100%</span>
+            </div>
+          </div>
+        </div>
+        <div class="settings-section">
+          <h3 class="settings-section-title" data-i18n="terminal">ターミナル</h3>
+          <div class="settings-row">
+            <label data-i18n="scrollback">スクロールバック行数</label>
+            <input type="number" id="settings-scrollback" min="100" max="100000" step="1000" value="10000">
+          </div>
+          <div class="settings-row">
+            <label data-i18n="cursorBlink">カーソル点滅</label>
+            <label class="settings-toggle">
+              <input type="checkbox" id="settings-cursor-blink" checked>
+              <span class="settings-toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="settings-section">
+          <h3 class="settings-section-title" data-i18n="editorIntegration">エディタ連携</h3>
+          <div class="settings-row">
+            <label data-i18n="fileLinkClick">ファイル名クリック</label>
+            <label class="settings-toggle">
+              <input type="checkbox" id="settings-file-link" checked>
+              <span class="settings-toggle-slider"></span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <label data-i18n="editor">エディタ</label>
+            <select id="settings-editor">
+              <option value="auto">自動検出</option>
+              <option value="code">VS Code</option>
+              <option value="cursor">Cursor</option>
+              <option value="vim">Vim</option>
+              <option value="nvim">Neovim</option>
+              <option value="emacs">Emacs</option>
+              <option value="emacsclient">Emacsclient</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-section">
+          <h3 class="settings-section-title" data-i18n="language">言語</h3>
+          <div class="settings-row">
+            <label data-i18n="uiLanguage">UI言語</label>
+            <select id="settings-language">
+              <option value="ja">日本語</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="settings-dialog-footer">
+        <button id="settings-cancel-btn">キャンセル</button>
+        <button id="settings-save-btn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Share dialog -->
+  <div id="share-dialog">
+    <div class="share-dialog-box">
+      <div class="share-dialog-header">
+        <h2 data-i18n="shareWindow">Share Window</h2>
+        <button id="share-dialog-close">&#10005;</button>
+      </div>
+      <div class="share-dialog-body">
+        <div id="share-inactive-view">
+          <p style="color: var(--fg-sub); font-size: 13px;" data-i18n="shareDescription">Share your terminal window with another Infiniterm on the same network.</p>
+        </div>
+        <div id="share-active-view" style="display: none;">
+          <span class="share-status-badge active" data-i18n="sharing">Sharing</span>
+          <img id="share-qr" alt="QR Code" width="200" height="200">
+          <div class="share-code-display" id="share-code-display"></div>
+          <div class="share-info" id="share-connect-info"></div>
+          <div class="share-client-count" id="share-client-count"></div>
+        </div>
+      </div>
+      <div class="share-dialog-footer">
+        <button id="share-start-btn" data-i18n="startSharing">Start Sharing</button>
+        <button id="share-stop-btn" data-i18n="stopSharing">Stop Sharing</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Connect dialog -->
+  <div id="connect-dialog">
+    <div class="connect-dialog-box">
+      <div class="connect-dialog-header">
+        <h2 data-i18n="connectToRemote">Connect to Remote</h2>
+        <button id="connect-dialog-close">&#10005;</button>
+      </div>
+      <div class="connect-dialog-body">
+        <label for="connect-host" data-i18n="hostAddress">Host Address</label>
+        <input id="connect-host" type="text" placeholder="192.168.1.100">
+        <label for="connect-port" data-i18n="port">Port</label>
+        <input id="connect-port" type="number" placeholder="12345">
+        <label for="connect-code" data-i18n="accessCode">Access Code</label>
+        <input id="connect-code" type="text" placeholder="123456" maxlength="6">
+        <div id="connect-status"></div>
+      </div>
+      <div class="connect-dialog-footer">
+        <button id="connect-cancel-btn" data-i18n="cancel">Cancel</button>
+        <button id="connect-btn" data-i18n="connect">Connect</button>
       </div>
     </div>
   </div>
