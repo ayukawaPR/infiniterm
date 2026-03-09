@@ -878,7 +878,7 @@ function createTerminal(): { term: Terminal; fitAddon: FitAddon; searchAddon: Se
 
 // ---- Clipboard helpers ----
 
-function attachClipboard(pane: HTMLElement, term: Terminal, session: TabSession): void {
+function attachClipboard(pane: HTMLElement, term: Terminal): void {
   // 選択 → 自動コピー
   term.onSelectionChange(() => {
     const sel = term.getSelection();
@@ -993,7 +993,7 @@ async function createTab(shellExe?: string): Promise<void> {
   registerOsc7(term, session);
   registerFileLinks(term, session);
   registerFilenameLinks(term, session);
-  attachClipboard(pane, term, session);
+  attachClipboard(pane, term);
 
   activateTab(tabId);
 
@@ -1540,7 +1540,7 @@ async function connectSsh(profile: SSHProfile): Promise<void> {
   registerOsc7(term, session);
   registerFileLinks(term, session);
   registerFilenameLinks(term, session);
-  attachClipboard(pane, term, session);
+  attachClipboard(pane, term);
 
   // RAF を待って fit — DOM レイアウト確定後に正確な cols/rows を取得
   await new Promise<void>(resolve => requestAnimationFrame(() => { fitAddon.fit(); resolve(); }));
@@ -1928,7 +1928,7 @@ function createRemoteTab(remoteTabId: number, title: string, cols: number, rows:
     window.electronAPI.shareRemoteInput(remoteTabId, data);
   });
 
-  attachClipboard(pane, term, session);
+  attachClipboard(pane, term);
 
   tabEl.addEventListener('click', (e) => {
     const closeBtn = (e.target as HTMLElement).closest('[data-close]');
