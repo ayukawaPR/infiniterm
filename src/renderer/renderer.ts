@@ -127,6 +127,7 @@ let defaultShellId = '';
 let sshProfiles: SSHProfile[] = [];
 let editingProfileId: string | null = null;
 let scrollRepeatCount = 0;
+let suppressPtyResize = false;
 let currentFontSize = 14;
 const DEFAULT_FONT_SIZE = 14;
 const MIN_FONT_SIZE = 8;
@@ -189,31 +190,46 @@ function resizeTerminalToVirtualWidth(session: TabSession): void {
   const viewWidth = stack.clientWidth || 1;
   const vw = session.minimapVirtualWidth || viewWidth;
 
-  // fitAddon で正しい rows と baseCols を取得
-  session.fitAddon.fit();
-  const rows = session.term.rows;
-  const baseCols = session.term.cols;
+  // fitAddon.fit() や term.resize() は term.onResize を発火し、
+  // 通常の pty-resize が送られてしまう。仮想幅モードでは
+  // この関数が適切なリサイズを最後に送るので、onResize 経由を抑制する。
+  suppressPtyResize = true;
+  try {
+    // fitAddon で正しい rows と baseCols を取得
+    session.fitAddon.fit();
+    const rows = session.term.rows;
+    const baseCols = session.term.cols;
 
-  const ratio = vw / viewWidth;
-  if (ratio <= 1.001) {
-    // 通常幅に戻す
+    const ratio = vw / viewWidth;
+    if (ratio <= 1.001) {
+      // 通常幅に戻す
+      suppressPtyResize = false;
+      applyTerminalScroll(session);
+      // 通常幅ではリサイズを送る必要がある（fitAddon.fit で既に正しいサイズ）
+      if (session.ptyId !== null && !session.isSsh) {
+        window.electronAPI.resize(session.ptyId, baseCols, rows);
+      }
+      return;
+    }
+
+    const newCols = Math.max(baseCols, Math.round(baseCols * ratio));
+    session.term.resize(newCols, rows);
     applyTerminalScroll(session);
-    return;
+  } finally {
+    suppressPtyResize = false;
   }
 
-  const newCols = Math.max(baseCols, Math.round(baseCols * ratio));
-  session.term.resize(newCols, rows);
-  applyTerminalScroll(session);
-
-  // PTY もリサイズ
+  // PTY もリサイズ（onResize 経由ではなくここで直接送る）
   if (session.ptyId !== null) {
+    const cols = session.term.cols;
+    const rows = session.term.rows;
     if (session.isSsh) {
-      window.electronAPI.sshResize(session.ptyId, newCols, rows);
+      window.electronAPI.sshResize(session.ptyId, cols, rows);
     } else if (appSettings.tmuxPaneExpansion === 'left') {
       // tmux 左端ペイン拡大モード: 左端ペインのみ広がるようリサイズ
-      window.electronAPI.resizeTmuxLeft(session.ptyId, newCols, rows);
+      window.electronAPI.resizeTmuxLeft(session.ptyId, cols, rows);
     } else {
-      window.electronAPI.resize(session.ptyId, newCols, rows);
+      window.electronAPI.resize(session.ptyId, cols, rows);
     }
   }
 }
@@ -1040,6 +1056,7 @@ async function createTab(shellExe?: string): Promise<void> {
       }
     });
     term.onResize(({ cols, rows }) => {
+      if (suppressPtyResize) return;
       if (session.ptyId !== null) {
         window.electronAPI.resize(result.id, cols, rows);
         if (isSharing) window.electronAPI.shareTabResized(result.id, cols, rows);
