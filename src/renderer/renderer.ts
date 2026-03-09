@@ -42,6 +42,7 @@ declare global {
       killPty: (id: number) => void;
       sendInput: (id: number, data: string) => void;
       resize: (id: number, cols: number, rows: number) => void;
+      resizeTmuxLeft: (id: number, cols: number, rows: number) => void;
       onData: (callback: (event: { id: number; data: string }) => void) => () => void;
       onExit: (callback: (event: { id: number; exitCode: number; signal?: number }) => void) => () => void;
       minimize: () => void;
@@ -208,6 +209,9 @@ function resizeTerminalToVirtualWidth(session: TabSession): void {
   if (session.ptyId !== null) {
     if (session.isSsh) {
       window.electronAPI.sshResize(session.ptyId, newCols, rows);
+    } else if (appSettings.tmuxPaneExpansion === 'left') {
+      // tmux 左端ペイン拡大モード: 左端ペインのみ広がるようリサイズ
+      window.electronAPI.resizeTmuxLeft(session.ptyId, newCols, rows);
     } else {
       window.electronAPI.resize(session.ptyId, newCols, rows);
     }
@@ -556,6 +560,7 @@ const settingsCursorBlink = document.getElementById('settings-cursor-blink') as 
 const settingsFileLink = document.getElementById('settings-file-link') as HTMLInputElement;
 const settingsEditor = document.getElementById('settings-editor') as HTMLSelectElement;
 const settingsLanguage = document.getElementById('settings-language') as HTMLSelectElement;
+const settingsTmuxPaneExpansion = document.getElementById('settings-tmux-pane-expansion') as HTMLSelectElement;
 const settingsSaveBtn = document.getElementById('settings-save-btn')!;
 const settingsCancelBtn = document.getElementById('settings-cancel-btn')!;
 
@@ -584,6 +589,7 @@ function openSettings(): void {
   settingsFileLink.checked = appSettings.fileLinkEnabled;
   settingsEditor.value = appSettings.editor;
   settingsLanguage.value = appSettings.language;
+  settingsTmuxPaneExpansion.value = appSettings.tmuxPaneExpansion;
   settingsDialog.classList.add('open');
 }
 
@@ -682,6 +688,9 @@ function updateUILanguage(): void {
   cursorOpts[2].textContent = t('bar');
   // Editor auto option
   settingsEditor.options[0].textContent = t('auto');
+  // Tmux pane expansion options
+  settingsTmuxPaneExpansion.options[0].textContent = t('tmuxPaneEqual');
+  settingsTmuxPaneExpansion.options[1].textContent = t('tmuxPaneLeft');
 }
 
 settingsSaveBtn.addEventListener('click', () => {
@@ -696,6 +705,7 @@ settingsSaveBtn.addEventListener('click', () => {
     fileLinkEnabled: settingsFileLink.checked,
     editor: settingsEditor.value,
     language: settingsLanguage.value,
+    tmuxPaneExpansion: settingsTmuxPaneExpansion.value as 'equal' | 'left',
   });
   closeSettings();
 });
